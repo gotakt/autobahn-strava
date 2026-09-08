@@ -20,10 +20,10 @@ same Autobahn section. Instead of rewarding whoever went fastest, the leaderboar
   **sustained max** (fastest rolling 5-second average, not a single GPS spike).
 - 🏆 **Same-segment leaderboard** ranked by a **Legal-Drive Score**, not by top speed.
 - 👤 **Anonymous nicknames** — no real names required.
-- 🔒 **Privacy controls** — trips default to private, the first & last 500 m of every route
-  are trimmed before anything is measured, the raw GPS path is never stored at all, and any
-  trip can be deleted. Local data and published online entries have **separate** delete
-  buttons — see [Deleting things](#deleting-things).
+- 🔒 **Privacy controls** — trips default to private, the first & last 500 m are trimmed
+  before anything is measured **on drives long enough for that to work**, the raw GPS path is
+  never stored at all, and any trip can be deleted. Local data and published online entries
+  have **separate** delete buttons — see [Deleting things](#deleting-things).
 - 🌐 **Optional online leaderboard** — off until you switch it on, and then still per trip.
 - 🕵️ **GPS-cheating detection** — implausible speeds, teleport jumps and junk-accuracy
   traces are flagged and excluded from ranking.
@@ -47,7 +47,8 @@ you both
 2. press **publish** on one specific trip.
 
 **What is uploaded for a published trip:** nickname, the segment's id and — if the segment
-is new to the shared registry — its name, road type, limit and its two endpoints; the
+is new to the shared registry — its name, road type, limit and its two endpoints (see
+[`PRIVACY.md`](PRIVACY.md) for what those endpoints are); the
 derived metrics (score, average and sustained speed, hard-braking count, distance,
 duration); the downsampled speed-over-time track (≤ 120 points); a coarse area name; and an
 anonymous user id.
@@ -118,8 +119,9 @@ This app is designed around German road law and the GDPR:
 - **GPS speed is an estimate**, not a police-grade or legally certified measurement — the
   true speed can change between location updates.
 - **Privacy by design (GDPR):** nicknames instead of names, private-by-default trips,
-  first/last 500 m trimmed, no raw route stored or uploaded, self-service deletion for local
-  data and for published entries (two separate actions), no video/dashcam recording.
+  first/last 500 m trimmed where the drive is long enough, no raw route stored or uploaded at
+  all, self-service deletion for local data and for published entries (two separate actions),
+  no video/dashcam recording.
 
 See [`SAFETY.md`](SAFETY.md) and [`PRIVACY.md`](PRIVACY.md) for detail.
 

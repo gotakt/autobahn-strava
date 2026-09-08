@@ -25,8 +25,13 @@ once enabled nothing is transmitted until the user presses publish on one specif
   and sustained speed, hard-braking count, distance, duration), the downsampled speed track
   (capped at 120 points), a coarse area name, and an anonymous user id. If the segment is new
   to the shared registry, its name, road type, limit and its **two endpoints** go up with it
-  — that is the minimum needed to match two drives to the same stretch, and endpoints are the
-  trimmed ones.
+  — that is the minimum needed to match two drives to the same stretch. What those endpoints
+  are depends on the kind of segment:
+
+  | Segment | Endpoints |
+  |---|---|
+  | **Curated** (the ones shipped in `segments.js`) | predefined, approximate junction coordinates — *Kreuz Hannover-Ost*, *Dreieck Hildesheim* and so on. They describe a motorway interchange, not anybody's drive, and are identical for every user. |
+  | **Auto-created** (minted from a drive that matched nothing) | the first and last point of the **already privacy-trimmed** drive, and only for drives of at least 3 km. |
 - **Never uploaded:** the driven path. No lat/lon of the route is sent, because none exists
   in storage to send.
 - **Identity:** enabling the feature creates an anonymous Firebase identity — no email, no
@@ -40,9 +45,15 @@ once enabled nothing is transmitted until the user presses publish on one specif
 ## Data-minimisation & anonymity
 
 - **Nicknames, not real names.** A random nickname is generated on first run and can be changed.
-- **First & last 500 m trimmed** from every trip **before** any metric or segment match is
-  computed (on by default), so start and end locations are obscured. The trimming happens at
-  recording time, not at display time.
+- **First & last 500 m trimmed before** any metric or segment match is computed (on by
+  default), so start and end locations are obscured. The trimming happens at recording time,
+  not at display time.
+- This is not absolute, and the code does not pretend otherwise: on a drive too short to
+  remove 500 m from **both** ends without the two cuts meeting, `Store.trimEnds()` returns
+  the samples unchanged rather than mangling them. Such a drive is short by definition, and
+  it still never becomes a stored route — the coordinates are dropped either way. It also
+  produces no shared segment: an auto-segment is only minted from a drive of **at least
+  3 km** end to end (`MIN_SEGMENT_M`).
 - **Segment comparison, not route sharing.** The leaderboard shows scores and speeds for a
   named Autobahn section — never a map of anyone's path.
 - **Private by default.** New trips are private unless the user chooses to share them.
