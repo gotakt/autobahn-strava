@@ -20,16 +20,57 @@ same Autobahn section. Instead of rewarding whoever went fastest, the leaderboar
   **sustained max** (fastest rolling 5-second average, not a single GPS spike).
 - 🏆 **Same-segment leaderboard** ranked by a **Legal-Drive Score**, not by top speed.
 - 👤 **Anonymous nicknames** — no real names required.
-- 🔒 **Privacy controls** — trips default to private, the first & last 500 m of every route
-  are trimmed, the raw GPS path is never shown on the leaderboard, and any trip (or your
-  whole account) can be deleted.
+- 🔒 **Privacy controls** — trips default to private, the first & last 500 m are trimmed
+  before anything is measured **on drives long enough for that to work**, the raw GPS path is
+  never stored at all, and any trip can be deleted. Local data and published online entries
+  have **separate** delete buttons — see [Deleting things](#deleting-things).
+- 🌐 **Optional online leaderboard** — off until you switch it on, and then still per trip.
 - 🕵️ **GPS-cheating detection** — implausible speeds, teleport jumps and junk-accuracy
   traces are flagged and excluded from ranking.
 - 🏁 **Track mode** — a separate mode where top-speed / acceleration are allowed, intended
   for **closed / private tracks only**. Track results never mix with public-road leaderboards.
 
-Everything runs **client-side in the browser** and stores data in `localStorage`, so the
-MVP works with zero backend setup. A shared/online leaderboard is a documented later step.
+Recording, scoring and storing a drive happen **client-side in the browser**; local trips
+and their metrics live in `localStorage`, so the app works with no setup at all. A
+**shared online leaderboard exists** on top of that — opt-in, off by default, and only ever
+for a trip you explicitly publish. See [Online leaderboard](#online-leaderboard).
+
+---
+
+## Online leaderboard
+
+The app ships with a shared leaderboard backed by Firebase (Firestore over its REST
+endpoints — no SDK). It is **opt-in and off by default.** Nothing leaves the device until
+you both
+
+1. switch **Online-Rangliste** on in Settings, **and**
+2. press **publish** on one specific trip.
+
+**What is uploaded for a published trip:** nickname, the segment's id and — if the segment
+is new to the shared registry — its name, road type, limit and its two endpoints (see
+[`PRIVACY.md`](PRIVACY.md) for what those endpoints are); the
+derived metrics (score, average and sustained speed, hard-braking count, distance,
+duration); the downsampled speed-over-time track (≤ 120 points); a coarse area name; and an
+anonymous user id.
+
+**What is never uploaded:** the GPS path. No lat/lon of where you actually drove is sent,
+because none is stored in the first place — see [`PRIVACY.md`](PRIVACY.md).
+
+**Who you are online:** switching the feature on creates an anonymous Firebase identity —
+no email, no password, no profile. It is kept in `localStorage` under `as_cloud_session`
+and is the only thing linking two of your published drives to each other.
+
+### Deleting things
+
+There are **two separate paths**, and one does not do the other's work:
+
+| Action | Removes | Leaves |
+|---|---|---|
+| **Alle lokalen Daten löschen** | local trips, profile, self-created routes | published online entries, `as_cloud_session` |
+| **Meine Online-Daten löschen** | every entry this identity published, then the identity | local trips and profile |
+
+To leave nothing behind, use both. Merging them into one button is on the list; until then
+this table is the honest description.
 
 ---
 
@@ -78,7 +119,8 @@ This app is designed around German road law and the GDPR:
 - **GPS speed is an estimate**, not a police-grade or legally certified measurement — the
   true speed can change between location updates.
 - **Privacy by design (GDPR):** nicknames instead of names, private-by-default trips,
-  first/last 500 m trimmed, no raw route on the leaderboard, one-tap trip & account deletion,
+  first/last 500 m trimmed where the drive is long enough, no raw route stored or uploaded at
+  all, self-service deletion for local data and for published entries (two separate actions),
   no video/dashcam recording.
 
 See [`SAFETY.md`](SAFETY.md) and [`PRIVACY.md`](PRIVACY.md) for detail.
@@ -93,16 +135,24 @@ web/
   css/app.css       styles
   js/
     segments.js     known Autobahn sections + segment detection
+    places.js       nearest coarse area name for a segment
     geo.js          GPS recording, haversine, speed & sustained-max maths
     score.js        Legal-Drive Score + hard-braking / smoothness / cheating checks
     store.js        localStorage persistence, privacy trimming, seeded demo ghosts
+    cloud.js        optional online leaderboard (Firestore over REST)
+    replay.js       ghost replay of your drive against a rival
     app.js          UI wiring
 scripts/serve.js    tiny static server for local preview
+firestore.rules     rules for the shared leaderboard
 ```
+
+All eight modules under `js/` are loaded by `index.html` and all eight are in use.
 
 ## Roadmap
 
-- Shared online leaderboard (backend) with server-side cheat validation.
+- **Server-side scoring and cheat validation.** The shared leaderboard exists, but scores
+  are computed on the device, so the rules can only check that a value is physically
+  possible — not that it is genuine. Treat the board as friendly competition.
 - Optional **OBD-II** connection for higher accuracy and anti-fraud.
 - Weather / traffic condition tags per trip.
 - Vehicle categories.

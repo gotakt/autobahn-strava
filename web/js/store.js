@@ -1,7 +1,15 @@
 // Persistence, privacy trimming, and a seeded demo leaderboard.
 //
-// Storage is entirely local (localStorage) for the MVP — no data leaves the
-// device. A shared online leaderboard is a documented later step.
+// Everything in THIS file is local: trips and the profile live in localStorage
+// and nothing here talks to a network. What is stored per trip is metrics plus
+// a downsampled speed track — never lat/lon, so a stored trip cannot be turned
+// back into a route.
+//
+// The shared online leaderboard is NOT a later step any more; it ships in
+// cloud.js. It is opt-in, off by default, and uploads only when the user
+// publishes one specific trip. The two are deliberately separate: local
+// deletion here does not reach published entries, and Cloud.deleteAllMine()
+// does not touch what is stored here.
 
 (function (global) {
   "use strict";
