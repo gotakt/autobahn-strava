@@ -97,6 +97,10 @@ npm run serve
 # → http://localhost:8123
 ```
 
+The preview server binds to `127.0.0.1` only, so nothing on your network can reach it. If
+you deliberately want it reachable — to open it on a phone in the same WLAN — set
+`HOST=0.0.0.0`, and it will say so on startup.
+
 Or just open `web/index.html` in a browser. On a phone, serve it over HTTPS (Geolocation
 requires a secure context) — e.g. GitHub Pages or any static host.
 
