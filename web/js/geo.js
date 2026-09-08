@@ -15,6 +15,17 @@
     this.samples = [];
     this.watchId = null;
     this.onSample = onSample || function () {};
+    // Zaehler des aktuellen Laufs. Jeder Start erhoeht ihn, jeder Stopp auch.
+    // Alles, was zu einem alten Lauf gehoert, erkennt daran, dass es ueberholt
+    // ist — und raeumt sich selbst weg.
+    //
+    // Der Grund: `addWatcher()` loest asynchron auf. Wer Stopp tippt, bevor es
+    // soweit ist, hatte bis zum 09.09.2026 einen Watcher, den `stop()` nicht
+    // sah (watchId war noch null) und den danach nichts mehr entfernen konnte
+    // (native war null). Auf iOS mit `UIBackgroundModes: location` heisst das
+    // Standortverfolgung bei gesperrtem Bildschirm nach dem Stopp — genau das,
+    // was der Berechtigungstext ausschliesst.
+    this.lauf = 0;
   }
 
   // True inside the Capacitor shell, false in a browser or an installed PWA.
@@ -30,11 +41,12 @@
 
   Recorder.prototype.start = function () {
     this.samples = [];
+    const lauf = ++this.lauf;
     // The browser API stops the moment the screen locks or the user switches
     // apps, which is precisely when a drive is being recorded. Inside the native
     // shell, use the background watcher so a locked phone in a mount keeps
     // recording — this is the reason the app is wrapped natively at all.
-    return isNative() && nativePlugin() ? this._startNative() : this._startWeb();
+    return isNative() && nativePlugin() ? this._startNative(lauf) : this._startWeb();
   };
 
   Recorder.prototype._startWeb = function () {
@@ -47,9 +59,13 @@
     return this;
   };
 
-  Recorder.prototype._startNative = function () {
+  Recorder.prototype._startNative = function (lauf) {
     const plugin = nativePlugin();
     this.native = plugin;
+    // `plugin` bewusst als lokale Variable festgehalten: `this.native` wird von
+    // stop() auf null gesetzt, und der verspaetete Rueckweg unten braucht den
+    // Handle trotzdem, um aufzuraeumen.
+    const ueberholt = () => lauf !== this.lauf;
     plugin
       .addWatcher(
         {
@@ -61,6 +77,9 @@
           distanceFilter: 10,
         },
         (location, error) => {
+          // Ein Rueckruf aus einem gestoppten oder ueberholten Lauf gehoert
+          // nicht in die laufende Aufnahme.
+          if (ueberholt()) return;
           if (error) {
             // The user can deny "always" permission and still grant it later, so
             // surface it rather than silently recording nothing.
@@ -82,9 +101,19 @@
         }
       )
       .then((id) => {
+        if (ueberholt()) {
+          // Zwischen Start und dieser Antwort wurde gestoppt oder neu
+          // gestartet. Dieser Watcher gehoert niemandem mehr — sofort weg,
+          // und auf keinen Fall als aktueller watchId uebernehmen.
+          plugin.removeWatcher({ id }).catch(() => {});
+          return;
+        }
         this.watchId = id;
       })
-      .catch((e) => this.onSample({ error: e.message || String(e) }));
+      .catch((e) => {
+        if (ueberholt()) return;
+        this.onSample({ error: e.message || String(e) });
+      });
     return this;
   };
 
@@ -122,6 +151,9 @@
   };
 
   Recorder.prototype.stop = function () {
+    // Zuerst den Lauf ungueltig machen: ab hier erkennt jeder noch offene
+    // addWatcher-Rueckweg, dass er ueberholt ist, und raeumt selbst auf.
+    this.lauf++;
     if (this.watchId !== null) {
       if (this.native) this.native.removeWatcher({ id: this.watchId }).catch(() => {});
       else navigator.geolocation.clearWatch(this.watchId);

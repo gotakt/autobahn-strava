@@ -109,6 +109,40 @@ and don't touch it while driving. Recording is fully automatic — see below.
 
 ---
 
+## Native iOS
+
+The repository contains a Capacitor iOS target (`ios/App/App.xcodeproj`). It exists for one
+reason: the browser's geolocation API stops the moment the screen locks or you switch apps,
+which is exactly when a drive is being recorded. Inside the native shell a background
+watcher keeps recording — **only between an explicit Start and Stop**, which is what the
+permission strings in `Info.plist` promise.
+
+```bash
+npm ci
+npx cap sync ios
+open ios/App/App.xcodeproj
+```
+
+`npx cap sync ios` copies `web/` into the app bundle and regenerates `Package.swift`. On a
+clean checkout it must leave the working tree unchanged — if `git status` shows a diff
+afterwards, something committed is out of date.
+
+**What is proven and what is not.** The Swift package graph resolves and the plugin is
+wired into the recorder's real code path. An actual Xcode build is **not** proven: on the
+machine used here, `xcodebuild` refused with *"iOS 26.5 is not installed. Please download
+and install the platform from Xcode > Settings > Components."* That is a missing local
+toolchain component, not a known defect in this project — but it is also not a build proof,
+which is why this target is not called verified or fully supported.
+
+**A known finding, not a defect.** `npx cap sync ios` warns that
+`@capacitor-community/background-geolocation` is built for Capacitor 7 while this project
+uses Capacitor 8. The package's own metadata asks for `@capacitor/core >=3.0.0`, so the
+warning does not by itself contradict anything. Only a real build and a drive on a device
+will settle whether it matters.
+
+There is no iOS build in CI. A macOS runner plus a platform download, for a repository
+without signing certificates, would cost a lot and prove little.
+
 ## Safety & the law
 
 This app is designed around German road law and the GDPR:
@@ -148,6 +182,7 @@ web/
     app.js          UI wiring
 scripts/serve.js    tiny static server for local preview
 firestore.rules     rules for the shared leaderboard
+ios/, android/      Capacitor shells — see Native iOS above
 ```
 
 All eight modules under `js/` are loaded by `index.html` and all eight are in use.
