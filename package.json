@@ -5,7 +5,9 @@
   "description": "Strava for Autobahn journeys — leaderboard for the best legal drive, not the fastest.",
   "license": "MIT",
   "scripts": {
-    "serve": "node scripts/serve.js"
+    "serve": "node scripts/serve.js",
+    "test": "node --test tests/*.test.mjs",
+    "test:sabotage": "./tests/sabotage-legalspeed.sh"
   },
   "dependencies": {
     "@capacitor-community/background-geolocation": "^1.2.26",

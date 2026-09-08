@@ -145,6 +145,73 @@
     { segmentId: "b3-a7-celle-hannover", nickname: "StetigReh44", score: 89, avgKmh: 86, sustainedKmh: 97, hardBraking: 0, mode: "public", demo: true },
   ];
 
+  // ---- "Schnellste legale Fahrt": eine Regel, eine Stelle -------------------
+  //
+  // Diese Ansicht darf es nur geben, wo ein ECHTES Tempolimit gilt. Auf einem
+  // unbegrenzten Abschnitt gaebe es nichts, woran "legal" sich messen liesse —
+  // und die Richtgeschwindigkeit taugt nicht als Ersatz: 130 ist eine Empfehlung,
+  // kein Gesetz. Sie hier als Grenze zu behandeln hiesse, eine falsche Aussage
+  // durch eine andere zu ersetzen. Also wird die Ansicht dort gar nicht
+  // angeboten; der Legal-Drive-Score bleibt davon unberuehrt.
+  //
+  // Bis zum 08.09.2026 stand diese Pruefung nur hier, und der Online-Weg lief
+  // daran vorbei: Cloud.leaderboard() sortiert nur nach sustainedKmh, und der
+  // Mischschritt haengte das Ergebnis ungefiltert an. Ein Eintrag mit 118 km/h
+  // stand so auf Platz 1 eines 100er-Abschnitts. Deshalb liegt die Regel jetzt
+  // als Praedikat hier und BEIDE Wege muessen hindurch.
+
+  // Dieselbe Toleranz wie in score.js: GPS-Tempo ist eine Schaetzung, und
+  // jemanden wegen 1 km/h Messrauschen aus der Wertung zu nehmen waere falsch.
+  const GPS_TOLERANZ_KMH = 3;
+
+  // Mindestqualitaet, damit "schnell" nicht "ruecksichtslos" heissen kann.
+  const MIN_SCORE = 70;
+
+  /** Gibt es auf diesem Abschnitt ueberhaupt ein gesetzliches Limit? */
+  function legalSpeedVerfuegbar(seg) {
+    return !!(seg && typeof seg.limitKmh === "number" && seg.limitKmh > 0);
+  }
+
+  /** Darf diese Zeile in "Schnellste legale Fahrt"? Gilt fuer lokale UND
+   *  Online-Zeilen — es gibt keinen zweiten Weg hinein. */
+  function legalSpeedZulaessig(row, seg) {
+    if (!legalSpeedVerfuegbar(seg)) return false;
+    const v = row && row.sustainedKmh;
+    const s = row && row.score;
+    // Bewusst KEINE Umwandlung: `Number("118")` waere 118, und damit koennte
+    // eine Zeile, deren Zahlen als Text ankommen, unbemerkt durchrutschen. Die
+    // Firestore-Regeln verlangen `is number`, und cloud.js wandelt
+    // `integerValue` selbst um — es gibt also keinen legitimen Weg, auf dem
+    // hier ein Text ankaeme. Wenn doch einer kommt, ist etwas kaputt und die
+    // richtige Antwort ist "nein", nicht "vielleicht".
+    if (typeof v !== "number" || !isFinite(v)) return false;
+    if (typeof s !== "number" || !isFinite(s)) return false;
+    return v <= seg.limitKmh + GPS_TOLERANZ_KMH && s >= MIN_SCORE;
+  }
+
+  /** Lokale und Online-Zeilen zusammenfuehren.
+   *
+   *  Als eigene, reine Funktion, damit der Vertrag pruefbar ist: vorher steckte
+   *  das Mischen in einer DOM-gebundenen async-Funktion in app.js, und genau
+   *  dort ist der Filter vergessen worden.
+   *
+   *  `publishedIds`: eine veroeffentlichte Fahrt liegt lokal UND online vor —
+   *  die Online-Fassung gewinnt, damit sie nicht doppelt zaehlt. */
+  function mischeRanglisten(lokal, online, seg, sort, publishedIds) {
+    const schon = publishedIds instanceof Set ? publishedIds : new Set(publishedIds || []);
+    const zeilen = (lokal || [])
+      .filter((r) => !r.id || !schon.has(r.id))
+      .concat(online || []);
+
+    if (sort === "legalSpeed") {
+      const erlaubt = zeilen.filter((r) => legalSpeedZulaessig(r, seg));
+      erlaubt.sort((a, b) => b.sustainedKmh - a.sustainedKmh);
+      return erlaubt;
+    }
+    zeilen.sort((a, b) => b.score - a.score);
+    return zeilen;
+  }
+
   // Leaderboard for a segment: demo ghosts + this device's own eligible trips.
   // `sort`: "score" (default) or "legalSpeed" (fastest, limited to lawful drives).
   function leaderboard(segmentId, sort) {
@@ -168,9 +235,10 @@
     let rows = DEMO.filter((d) => d.segmentId === segmentId).concat(mine);
 
     if (sort === "legalSpeed") {
-      // "Fastest LEGAL journey": only lawful drives, ranked by sustained speed.
-      const lawful = seg && seg.limitKmh;
-      rows = rows.filter((r) => (lawful ? r.sustainedKmh <= seg.limitKmh + 3 : true) && r.score >= 70);
+      // Ohne echtes Limit gibt es diese Ansicht nicht — die Oberflaeche bietet
+      // sie dort gar nicht erst an, und falls doch jemand danach fragt, ist die
+      // ehrliche Antwort eine leere Liste statt eines Temporankings.
+      rows = rows.filter((r) => legalSpeedZulaessig(r, seg));
       rows.sort((a, b) => b.sustainedKmh - a.sustainedKmh);
     } else {
       rows.sort((a, b) => b.score - a.score);
@@ -191,5 +259,10 @@
     deleteAll,
     newId,
     leaderboard,
+    legalSpeedVerfuegbar,
+    legalSpeedZulaessig,
+    mischeRanglisten,
+    GPS_TOLERANZ_KMH,
+    MIN_SCORE,
   };
 })(typeof window !== "undefined" ? window : globalThis);
