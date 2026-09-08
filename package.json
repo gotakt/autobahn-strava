@@ -8,7 +8,8 @@
     "serve": "node scripts/serve.js",
     "test": "node --test tests/*.test.mjs",
     "test:sabotage": "./tests/sabotage-legalspeed.sh",
-    "test:sabotage:serve": "./tests/sabotage-serve.sh"
+    "test:sabotage:serve": "./tests/sabotage-serve.sh",
+    "test:sabotage:recorder": "./tests/sabotage-recorder.sh"
   },
   "dependencies": {
     "@capacitor-community/background-geolocation": "^1.2.26",

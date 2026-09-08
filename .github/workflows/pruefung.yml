@@ -67,3 +67,12 @@ jobs:
       # muessen einen benannten Fall rot machen.
       - name: Gegenprobe — der Vorschau-Server bleibt lokal und in web/
         run: npm run test:sabotage:serve
+
+      # Der native Aufnahme-Lebenszyklus. `Info.plist` verspricht, die
+      # Aufzeichnung laufe nur zwischen Start und Stopp; mit
+      # `UIBackgroundModes: location` waere ein uebriggebliebener Watcher
+      # Standortverfolgung nach dem Stopp. Node-Tests mit einem Plugin-Mock —
+      # bewusst KEINE iOS-Build-CI, die wuerde einen macOS-Laeufer samt
+      # Plattform-Download brauchen und wenig beweisen.
+      - name: Gegenprobe — kein Watcher ueberlebt den Stopp
+        run: npm run test:sabotage:recorder
