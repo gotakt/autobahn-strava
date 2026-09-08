@@ -1,0 +1,63 @@
+# Die erste CI dieses Repositorys.
+#
+# Sie prueft nicht die ganze App, sondern friert die eine Zusage ein, die das
+# Produkt traegt: kein Tempo-Ranking auf oeffentlichen Strassen. Die war bis
+# zum 08.09.2026 gebrochen, und niemand hat es gemerkt, weil es hier weder
+# Tests noch CI gab.
+#
+# Was hier NICHT laeuft, und warum das benannt statt verschwiegen wird:
+# Scoring-Formel, GPS-Aufzeichnung und die Firestore-Regeln haben noch keine
+# Tests. Sie kommen dazu, wenn sie drankommen — eine Testquote zu erfinden
+# waere kein Fortschritt.
+
+name: Pruefung
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    name: Syntax · Tests · Gegenprobe
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node (Version aus .nvmrc)
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      # Baut aus dem Lockfile und scheitert, wenn package.json und Lockfile
+      # auseinander sind.
+      - name: npm ci
+        run: npm ci
+
+      # Nur Production-Abhaengigkeiten, erst ab `high`. Was ein Bauwerkzeug
+      # betrifft, landet nicht im Browser des Nutzers; eine CI, die bei jedem
+      # moderaten Fund im Werkzeugkasten rot wird, wird ignoriert statt gelesen.
+      - name: Production-Audit (ab high)
+        run: npm audit --omit=dev --audit-level=high
+
+      # Die Web-Module haben keinen Build. Ein Syntaxfehler wuerde sonst erst
+      # im Browser auffallen.
+      - name: Syntax aller Web-Module
+        run: |
+          for f in web/js/*.js scripts/serve.js; do
+            node --check "$f" || exit 1
+          done
+          echo "alle Module syntaktisch in Ordnung"
+
+      - name: Tests
+        run: npm test
+
+      # Gruen beweist erst etwas, wenn rot moeglich ist. Das Skript hebelt in
+      # vier Richtungen aus — Legalitaetsfilter, Mischschritt, Legalitaets-
+      # nachweis, Deduplizierung — und verlangt jeweils einen benannten roten
+      # Fall. Ein blosser Fehlschlag zaehlt nicht.
+      - name: Gegenprobe — die Suite muss ein Tempo-Ranking bemerken
+        run: npm run test:sabotage

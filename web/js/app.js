@@ -223,6 +223,10 @@
       routeMismatch,
       private: profile.defaultPrivate,
       eligible: mode === "public" && !!segment && cheat.ok,
+      // Aus JEDEM Sample abgeleitet, nicht aus dem Fuenf-Sekunden-Mittel:
+      // blieb die Fahrt auf einem Abschnitt mit echtem Limit durchgehend
+      // darunter? null, wo es kein festes Limit gibt.
+      withinLimit: Score.bliebImLimit(samples, segment ? segment.limitKmh : null),
       cheatFlags: cheat.flags,
       distanceM: metrics.distanceM,
       durationSec: metrics.durationSec,
@@ -548,7 +552,27 @@
 
   function renderBoard() {
     const segId = $("#boardSegment").value || Segments.all()[0].id;
-    const sort = $("#boardSort").value;
+    const seg = Segments.byId(segId);
+
+    // Wo kein gesetzliches Limit gilt, gibt es keine "schnellste LEGALE Fahrt" —
+    // es gaebe nichts, woran das Wort sich messen liesse. Die Auswahl wird
+    // deshalb gesperrt statt eine Rangliste zu zeigen, die in Wahrheit nach
+    // Tempo sortiert. Die Richtgeschwindigkeit ersetzt das Limit bewusst nicht.
+    const sortSel = $("#boardSort");
+    const legalOpt = sortSel.querySelector('option[value="legalSpeed"]');
+    const erlaubt = Store.legalSpeedVerfuegbar(seg);
+    if (legalOpt) {
+      legalOpt.disabled = !erlaubt;
+      legalOpt.textContent = erlaubt
+        ? "⚡ Schnellste legale Fahrt"
+        : "⚡ Schnellste legale Fahrt (nur mit Tempolimit)";
+    }
+    if (!erlaubt && sortSel.value === "legalSpeed") sortSel.value = "score";
+
+    const sort = sortSel.value;
+    $("#boardSortHint").textContent = erlaubt
+      ? ""
+      : "Auf diesem Abschnitt gilt kein festes Tempolimit. Gewertet wird nur der Legal-Drive-Score.";
     drawBoard(Store.leaderboard(segId, sort), sort);
     // Online rows arrive over the network, so paint the local board immediately
     // and fold them in when they land — the board is never blank while waiting.
@@ -568,16 +592,18 @@
 
     const local = Store.leaderboard(segId, sort);
     // A published trip exists both locally and online; keep the online copy so
-    // it is not counted twice.
-    const publishedIds = new Set(
-      Store.getTrips().map((t) => t.publishedId).filter(Boolean)
-    );
-    const merged = local
-      .filter((r) => !r.id || !publishedIds.has(r.id))
-      .concat(online.map((r) => ({ ...r, nickname: r.nickname, hardBraking: r.hardBraking })));
-
-    merged.sort((a, b) =>
-      sort === "legalSpeed" ? b.sustainedKmh - a.sustainedKmh : b.score - a.score
+    // it is not counted twice. Die Zuordnung steckt in store.js, damit sie
+    // geprueft werden kann — hier stand sie frueher von Hand und war falsch.
+    // Mischen UND filtern an einer Stelle. Hier stand vorher ein eigenes
+    // .concat() mit eigener Sortierung — und ohne den Legalitaetsfilter, den
+    // die lokale Liste schon hinter sich hatte. Genau dadurch kam ein
+    // Ueber-Limit-Eintrag ueber den Online-Weg wieder herein.
+    const merged = Store.mischeRanglisten(
+      local,
+      online.map((r) => ({ ...r, nickname: r.nickname, hardBraking: r.hardBraking })),
+      Segments.byId(segId),
+      sort,
+      Store.veroeffentlichteLokaleIds()
     );
     drawBoard(merged, sort);
     $("#boardNote").textContent = online.length

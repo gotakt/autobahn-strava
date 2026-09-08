@@ -163,6 +163,20 @@
   // Push a trip to the shared board. Returns the created entry id.
   async function publishTrip(trip, segment, area) {
     if (!isEnabled()) throw new Error("Online-Rangliste ist nicht aktiviert.");
+
+    // Dieselbe Bedingung, unter der die Oberflaeche den Knopf ueberhaupt zeigt —
+    // hier noch einmal. Bis zum 08.09.2026 war die Oberflaeche die einzige
+    // Schranke: ein Track-Lauf oder eine als unplausibel geflaggte Fahrt haette
+    // ueber einen direkten Aufruf in der oeffentlichen Rangliste landen koennen,
+    // und die Firestore-Regeln kennen weder `mode` noch `eligible`, koennen es
+    // also nicht auffangen.
+    if (trip.mode !== "public") {
+      throw new Error("Track-Fahrten gehoeren nicht in die oeffentliche Rangliste.");
+    }
+    if (!trip.eligible) {
+      throw new Error("Diese Fahrt ist nicht gewertet und kann nicht veroeffentlicht werden.");
+    }
+
     const s = await signIn();
 
     // The segment has to exist before entries can point at it.
@@ -176,6 +190,11 @@
       avgKmh: Math.round(trip.avgKmh),
       sustainedKmh: Math.round(trip.sustainedKmh),
       hardBraking: trip.score.hardBrakingEvents,
+      // Der Legalitaetsnachweis muss mit, sonst kann die Gegenseite ihn nicht
+      // pruefen und muesste jeden Online-Eintrag ausschliessen. Immer ein
+      // Boolescher Wert: auf Abschnitten ohne festes Limit ist er `false` und
+      // ohne Bedeutung, weil es die Ansicht dort gar nicht gibt.
+      withinLimit: trip.withinLimit === true,
       distanceM: Math.round(trip.distanceM),
       durationSec: Math.round(trip.durationSec),
       // Already downsampled to <= 60 points when the trip was saved.
@@ -246,6 +265,11 @@
 
   // ---- Reading --------------------------------------------------------------
 
+  // ACHTUNG: liefert die Zeilen UNGEFILTERT. Firestore kann zwei Felder nicht
+  // miteinander vergleichen, also kann diese Abfrage nicht gegen das Tempolimit
+  // des Abschnitts pruefen. Die Legalitaetspruefung passiert genau einmal, in
+  // Store.mischeRanglisten(). Wer diese Funktion direkt benutzt, muss sie selbst
+  // dort hindurchschicken.
   async function leaderboard(segmentId, sort, limit) {
     const orderField = sort === "legalSpeed" ? "sustainedKmh" : "score";
     const body = {
