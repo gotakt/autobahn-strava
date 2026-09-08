@@ -61,3 +61,9 @@ jobs:
       # Fall. Ein blosser Fehlschlag zaehlt nicht.
       - name: Gegenprobe — die Suite muss ein Tempo-Ranking bemerken
         run: npm run test:sabotage
+
+      # Und dasselbe fuer die zwei Zusagen des Vorschau-Servers: er bindet
+      # wieder ohne Host, und die alte Pfadaufloesung ist zurueck. Beide
+      # muessen einen benannten Fall rot machen.
+      - name: Gegenprobe — der Vorschau-Server bleibt lokal und in web/
+        run: npm run test:sabotage:serve
