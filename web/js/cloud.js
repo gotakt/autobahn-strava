@@ -190,6 +190,11 @@
       avgKmh: Math.round(trip.avgKmh),
       sustainedKmh: Math.round(trip.sustainedKmh),
       hardBraking: trip.score.hardBrakingEvents,
+      // Der Legalitaetsnachweis muss mit, sonst kann die Gegenseite ihn nicht
+      // pruefen und muesste jeden Online-Eintrag ausschliessen. Immer ein
+      // Boolescher Wert: auf Abschnitten ohne festes Limit ist er `false` und
+      // ohne Bedeutung, weil es die Ansicht dort gar nicht gibt.
+      withinLimit: trip.withinLimit === true,
       distanceM: Math.round(trip.distanceM),
       durationSec: Math.round(trip.durationSec),
       // Already downsampled to <= 60 points when the trip was saved.

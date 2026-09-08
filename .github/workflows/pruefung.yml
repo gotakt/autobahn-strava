@@ -55,8 +55,9 @@ jobs:
       - name: Tests
         run: npm test
 
-      # Gruen beweist erst etwas, wenn rot moeglich ist. Das Skript hebelt den
-      # Legalitaetsfilter aus und danach den Mischschritt, und verlangt jeweils
-      # einen benannten roten Fall — ein blosser Fehlschlag zaehlt nicht.
+      # Gruen beweist erst etwas, wenn rot moeglich ist. Das Skript hebelt in
+      # vier Richtungen aus — Legalitaetsfilter, Mischschritt, Legalitaets-
+      # nachweis, Deduplizierung — und verlangt jeweils einen benannten roten
+      # Fall. Ein blosser Fehlschlag zaehlt nicht.
       - name: Gegenprobe — die Suite muss ein Tempo-Ranking bemerken
         run: npm run test:sabotage

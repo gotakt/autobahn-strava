@@ -9,6 +9,16 @@
   const MS_TO_KMH = global.Geo.MS_TO_KMH;
   const RICHTGESCHWINDIGKEIT = 130; // km/h advisory where no fixed limit applies
 
+  // GPS-Tempo ist eine Schaetzung. Wer wegen 1 km/h Messrauschen als Raser
+  // gilt, wuerde zu Recht nicht mehr mitmachen. Dieselbe Toleranz gilt fuer
+  // die Bewertung UND fuer den Legalitaetsnachweis — zwei Zahlen an zwei
+  // Stellen waeren ein Auseinanderlaufen mit Ansage.
+  const GPS_TOLERANZ_KMH = 3;
+
+  // Nur Werte oberhalb dieser Schwelle gelten als "fahrend". Darunter ist es
+  // Stillstand oder GPS-Zittern, und beides sagt ueber Tempo nichts aus.
+  const FAEHRT_AB_KMH = 5;
+
   // Per-sample speed (km/h) and per-interval acceleration (m/s^2).
   function kinematics(samples) {
     const speeds = samples.map((s) => s.spd * MS_TO_KMH);
@@ -77,11 +87,11 @@
   // 130 km/h Richtgeschwindigkeit — overspeed here is discouraged, not illegal.
   function lawfulnessScore(samples, limitKmh) {
     const { speeds } = kinematics(samples);
-    const moving = speeds.filter((v) => v > 5);
+    const moving = speeds.filter((v) => v > FAEHRT_AB_KMH);
     if (!moving.length) return 100;
 
     if (limitKmh) {
-      const over = moving.filter((v) => v > limitKmh + 3); // 3 km/h GPS tolerance
+      const over = moving.filter((v) => v > limitKmh + GPS_TOLERANZ_KMH);
       const fracOver = over.length / moving.length;
       const avgExcess = over.length
         ? over.reduce((a, v) => a + (v - limitKmh), 0) / over.length
@@ -97,6 +107,30 @@
       ? above.reduce((a, v) => a + (v - RICHTGESCHWINDIGKEIT), 0) / above.length
       : 0;
     return clamp(100 - fracAbove * 25 - avgAbove * 0.4, 0, 100);
+  }
+
+  // Blieb die Fahrt auf einem Abschnitt mit ECHTEM Tempolimit durchgehend
+  // innerhalb davon?
+  //
+  // Warum das eine eigene Aussage braucht: `sustainedKmh` ist ein Mittel ueber
+  // fuenf Sekunden. Eine kurze, deutliche Ueberschreitung verschwindet darin.
+  // Gemessen am 09.09.2026: 130 km/h auf einem 100er-Abschnitt, ein einziges
+  // Sample darueber, sustained-5s 101,9 km/h, Score 75 — die Fahrt haette als
+  // "schnellste legale Fahrt" gegolten. Ein Mittelwert kann nicht belegen,
+  // dass etwas NIE passiert ist; dafuer muss man jeden Wert ansehen.
+  //
+  // Rueckgabe:
+  //   true   kein verwertbarer Wert lag ueber Limit + Toleranz
+  //   false  mindestens einer lag darueber
+  //   null   keine Aussage moeglich — kein festes Limit, oder nichts Fahrendes
+  //          gemessen. `null` ist bewusst NICHT `true`: wer nichts weiss, darf
+  //          nicht behaupten, es sei alles in Ordnung gewesen.
+  function bliebImLimit(samples, limitKmh) {
+    if (!(typeof limitKmh === "number" && limitKmh > 0)) return null;
+    const { speeds } = kinematics(samples || []);
+    const fahrend = speeds.filter((v) => typeof v === "number" && isFinite(v) && v > FAEHRT_AB_KMH);
+    if (!fahrend.length) return null;
+    return !fahrend.some((v) => v > limitKmh + GPS_TOLERANZ_KMH);
   }
 
   // Composite Legal-Drive Score.
@@ -179,6 +213,9 @@
     efficiencyScore,
     lawfulnessScore,
     cheatCheck,
+    bliebImLimit,
     RICHTGESCHWINDIGKEIT,
+    GPS_TOLERANZ_KMH,
+    FAEHRT_AB_KMH,
   };
 })(typeof window !== "undefined" ? window : globalThis);

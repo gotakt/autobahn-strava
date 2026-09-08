@@ -67,7 +67,7 @@ service cloud.firestore {
         && request.resource.data.keys().hasOnly(
              ['segmentId', 'uid', 'nickname', 'score', 'avgKmh', 'sustainedKmh',
               'hardBraking', 'distanceM', 'durationSec', 'speedTrack', 'area',
-              'roadType', 'createdAt'])
+              'roadType', 'withinLimit', 'createdAt'])
         && request.resource.data.uid == request.auth.uid
         && request.resource.data.createdAt == request.time
         && shortText(request.resource.data.segmentId, 128)
@@ -85,7 +85,13 @@ service cloud.firestore {
         // The trimmed speed track is the most detail we ever upload, and it is
         // capped so nobody can smuggle a high-resolution trace through it.
         && request.resource.data.speedTrack is list
-        && request.resource.data.speedTrack.size() <= 120;
+        && request.resource.data.speedTrack.size() <= 120
+        // Der Legalitaetsnachweis. Die Regeln koennen ihn nicht nachrechnen —
+        // sie koennen zwei Felder nicht miteinander vergleichen und kennen die
+        // Samples ohnehin nicht. Sie erzwingen nur, dass er da und ein
+        // Boolescher Wert ist; die Auswertung passiert im Client, der ihn
+        // streng auf `true` prueft und alles ohne Nachweis ausschliesst.
+        && request.resource.data.withinLimit is bool;
 
       // Entries are immutable: an edit would let a published result be rewritten
       // after others have already been ranked against it. Delete and re-publish.

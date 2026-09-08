@@ -9,13 +9,19 @@
 # bis zum 08.09.2026 gebrochen, ohne dass irgendetwas es gemerkt haette, weil es
 # in diesem Repository keinen einzigen automatischen Test gab.
 #
-# Zwei Richtungen, weil es zwei Wege in die Rangliste gibt und der Fehler genau
-# darin bestand, dass nur einer davon geprueft wurde:
+# Vier Richtungen. Zwei davon, weil es zwei Wege in die Rangliste gibt und der
+# Fehler genau darin bestand, dass nur einer geprueft wurde; zwei kamen am
+# 09.09.2026 dazu, nachdem die Gegenpruefung zwei weitere Luecken fand:
 #
 #   1. Der Filter im Praedikat wird ausgehebelt
 #      -> der 118-km/h-Fall auf dem 100er-Abschnitt muss rot werden
 #   2. Der Mischschritt laesst Online-Zeilen wieder vorbei
 #      -> genau der Online-Fall muss rot werden
+#   3. Der Legalitaetsnachweis wird nicht mehr verlangt
+#      -> die kurze Ueberschreitung, die im 5-s-Mittel verschwindet, muss
+#         wieder durchkommen und der dafuer zustaendige Fall rot werden
+#   4. Die Deduplizierung greift wieder auf die falsche Id
+#      -> die veroeffentlichte Fahrt steht doppelt und der Fall wird rot
 #
 # Ein blosser Exit-Code != 0 zaehlt NICHT. Ein Tippfehler oder ein kaputter
 # Testlauf wuerden ebenfalls scheitern und diese Gegenprobe faelschlich bestehen
@@ -104,6 +110,38 @@ oeffnen "$ZIEL" \
 grep -qF "SABOTAGE" "$ZIEL" || { echo "FEHLER: sabotierte Fassung nicht erzeugt." >&2; exit 1; }
 erwarte_rot "Sabotage 2: der Mischschritt" \
             "ein Ueber-Limit-Eintrag kommt beim Mischen NICHT zurueck"
+cp "$SICHERUNG" "$ZIEL"
+
+# ── 3. Der Legalitaetsnachweis wird nicht mehr verlangt ──────────────
+# Genau der Zustand von vor dem 09.09.2026: entschieden wurde allein ueber
+# das Fuenf-Sekunden-Mittel. Eine kurze Spitze auf 130 km/h verschwindet
+# darin und die Fahrt galt als legal.
+echo
+echo "Sabotage 3: withinLimit wird nicht mehr geprueft."
+echo "Die kurze Ueberschreitung MUSS wieder durchkommen und den Fall rot machen."
+echo
+oeffnen "$ZIEL" \
+  '    return row.withinLimit === true;' \
+  '    return true;  // SABOTAGE' || exit 1
+grep -qF "SABOTAGE" "$ZIEL" || { echo "FEHLER: sabotierte Fassung nicht erzeugt." >&2; exit 1; }
+erwarte_rot "Sabotage 3: der Legalitaetsnachweis" \
+            "kurze Ueberschreitung"
+cp "$SICHERUNG" "$ZIEL"
+
+# ── 4. Die Deduplizierung greift auf die falsche Id ──────────────────
+# Der stille Dauerfehler: das Set wurde aus `publishedId` gebaut, also aus
+# Online-Ids, und gegen die lokale Id der Ranglistenzeile gehalten. Die
+# treffen sich nie — die eigene veroeffentlichte Fahrt stand doppelt da.
+echo
+echo "Sabotage 4: das Set enthaelt wieder die Online-Ids statt der lokalen."
+echo "Die veroeffentlichte Fahrt MUSS doppelt auftauchen."
+echo
+oeffnen "$ZIEL" \
+  '    return new Set(getTrips().filter((t) => t.publishedId).map((t) => t.id));' \
+  '    return new Set(getTrips().map((t) => t.publishedId).filter(Boolean));  // SABOTAGE' || exit 1
+grep -qF "SABOTAGE" "$ZIEL" || { echo "FEHLER: sabotierte Fassung nicht erzeugt." >&2; exit 1; }
+erwarte_rot "Sabotage 4: die Deduplizierung" \
+            "zaehlt nicht doppelt"
 cp "$SICHERUNG" "$ZIEL"
 
 # Zurueck aufs Original und nachweisen, dass wieder alles gruen ist — sonst

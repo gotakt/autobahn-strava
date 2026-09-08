@@ -223,6 +223,10 @@
       routeMismatch,
       private: profile.defaultPrivate,
       eligible: mode === "public" && !!segment && cheat.ok,
+      // Aus JEDEM Sample abgeleitet, nicht aus dem Fuenf-Sekunden-Mittel:
+      // blieb die Fahrt auf einem Abschnitt mit echtem Limit durchgehend
+      // darunter? null, wo es kein festes Limit gibt.
+      withinLimit: Score.bliebImLimit(samples, segment ? segment.limitKmh : null),
       cheatFlags: cheat.flags,
       distanceM: metrics.distanceM,
       durationSec: metrics.durationSec,
@@ -588,10 +592,8 @@
 
     const local = Store.leaderboard(segId, sort);
     // A published trip exists both locally and online; keep the online copy so
-    // it is not counted twice.
-    const publishedIds = new Set(
-      Store.getTrips().map((t) => t.publishedId).filter(Boolean)
-    );
+    // it is not counted twice. Die Zuordnung steckt in store.js, damit sie
+    // geprueft werden kann — hier stand sie frueher von Hand und war falsch.
     // Mischen UND filtern an einer Stelle. Hier stand vorher ein eigenes
     // .concat() mit eigener Sortierung — und ohne den Legalitaetsfilter, den
     // die lokale Liste schon hinter sich hatte. Genau dadurch kam ein
@@ -601,7 +603,7 @@
       online.map((r) => ({ ...r, nickname: r.nickname, hardBraking: r.hardBraking })),
       Segments.byId(segId),
       sort,
-      publishedIds
+      Store.veroeffentlichteLokaleIds()
     );
     drawBoard(merged, sort);
     $("#boardNote").textContent = online.length

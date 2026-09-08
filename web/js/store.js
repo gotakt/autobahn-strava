@@ -131,18 +131,18 @@
   // ---- Seeded demo ghosts (so the leaderboard isn't empty on first run) ------
   // These are clearly-labelled synthetic entries, not real people.
   const DEMO = [
-    { segmentId: "a2-hannover-braunschweig", nickname: "GelassenOtter42", score: 94, avgKmh: 118, sustainedKmh: 129, hardBraking: 0, mode: "public", demo: true },
-    { segmentId: "a2-hannover-braunschweig", nickname: "EcoDachs17", score: 88, avgKmh: 112, sustainedKmh: 126, hardBraking: 1, mode: "public", demo: true },
-    { segmentId: "a2-hannover-braunschweig", nickname: "SmoothReh63", score: 81, avgKmh: 124, sustainedKmh: 138, hardBraking: 2, mode: "public", demo: true },
-    { segmentId: "a2-braunschweig-hannover", nickname: "RuhigFalke28", score: 90, avgKmh: 116, sustainedKmh: 131, hardBraking: 0, mode: "public", demo: true },
-    { segmentId: "a7-hannover-hildesheim", nickname: "StetigLuchs55", score: 86, avgKmh: 109, sustainedKmh: 124, hardBraking: 1, mode: "public", demo: true },
-    { segmentId: "a81-stuttgart-heilbronn", nickname: "VernünftigIgel11", score: 92, avgKmh: 108, sustainedKmh: 119, hardBraking: 0, mode: "public", demo: true },
-    { segmentId: "a7-b3-hannover-celle", nickname: "RuhigDachs31", score: 91, avgKmh: 88, sustainedKmh: 99, hardBraking: 0, mode: "public", demo: true },
-    { segmentId: "a7-b3-hannover-celle", nickname: "SanftOtter08", score: 84, avgKmh: 92, sustainedKmh: 103, hardBraking: 1, mode: "public", demo: true },
+    { segmentId: "a2-hannover-braunschweig", nickname: "GelassenOtter42", score: 94, avgKmh: 118, sustainedKmh: 129, hardBraking: 0, withinLimit: true, mode: "public", demo: true },
+    { segmentId: "a2-hannover-braunschweig", nickname: "EcoDachs17", score: 88, avgKmh: 112, sustainedKmh: 126, hardBraking: 1, withinLimit: true, mode: "public", demo: true },
+    { segmentId: "a2-hannover-braunschweig", nickname: "SmoothReh63", score: 81, avgKmh: 124, sustainedKmh: 138, hardBraking: 2, withinLimit: true, mode: "public", demo: true },
+    { segmentId: "a2-braunschweig-hannover", nickname: "RuhigFalke28", score: 90, avgKmh: 116, sustainedKmh: 131, hardBraking: 0, withinLimit: true, mode: "public", demo: true },
+    { segmentId: "a7-hannover-hildesheim", nickname: "StetigLuchs55", score: 86, avgKmh: 109, sustainedKmh: 124, hardBraking: 1, withinLimit: true, mode: "public", demo: true },
+    { segmentId: "a81-stuttgart-heilbronn", nickname: "VernünftigIgel11", score: 92, avgKmh: 108, sustainedKmh: 119, hardBraking: 0, withinLimit: true, mode: "public", demo: true },
+    { segmentId: "a7-b3-hannover-celle", nickname: "RuhigDachs31", score: 91, avgKmh: 88, sustainedKmh: 99, hardBraking: 0, withinLimit: true, mode: "public", demo: true },
+    { segmentId: "a7-b3-hannover-celle", nickname: "SanftOtter08", score: 84, avgKmh: 92, sustainedKmh: 103, hardBraking: 1, withinLimit: true, mode: "public", demo: true },
     // Over the B3's 100 limit: ranks last on score, and the "schnellste legale
     // Fahrt" board filters it out entirely rather than crowning it.
-    { segmentId: "a7-b3-hannover-celle", nickname: "EiligSpecht77", score: 62, avgKmh: 97, sustainedKmh: 118, hardBraking: 3, mode: "public", demo: true },
-    { segmentId: "b3-a7-celle-hannover", nickname: "StetigReh44", score: 89, avgKmh: 86, sustainedKmh: 97, hardBraking: 0, mode: "public", demo: true },
+    { segmentId: "a7-b3-hannover-celle", nickname: "EiligSpecht77", score: 62, avgKmh: 97, sustainedKmh: 118, hardBraking: 3, withinLimit: false, mode: "public", demo: true },
+    { segmentId: "b3-a7-celle-hannover", nickname: "StetigReh44", score: 89, avgKmh: 86, sustainedKmh: 97, hardBraking: 0, withinLimit: true, mode: "public", demo: true },
   ];
 
   // ---- "Schnellste legale Fahrt": eine Regel, eine Stelle -------------------
@@ -160,9 +160,10 @@
   // stand so auf Platz 1 eines 100er-Abschnitts. Deshalb liegt die Regel jetzt
   // als Praedikat hier und BEIDE Wege muessen hindurch.
 
-  // Dieselbe Toleranz wie in score.js: GPS-Tempo ist eine Schaetzung, und
-  // jemanden wegen 1 km/h Messrauschen aus der Wertung zu nehmen waere falsch.
-  const GPS_TOLERANZ_KMH = 3;
+  // Aus score.js bezogen, nicht noch einmal hingeschrieben: zwei Zahlen an
+  // zwei Stellen laufen frueher oder spaeter auseinander. score.js wird vor
+  // dieser Datei geladen (siehe index.html).
+  const GPS_TOLERANZ_KMH = global.Score.GPS_TOLERANZ_KMH;
 
   // Mindestqualitaet, damit "schnell" nicht "ruecksichtslos" heissen kann.
   const MIN_SCORE = 70;
@@ -186,7 +187,30 @@
     // richtige Antwort ist "nein", nicht "vielleicht".
     if (typeof v !== "number" || !isFinite(v)) return false;
     if (typeof s !== "number" || !isFinite(s)) return false;
-    return v <= seg.limitKmh + GPS_TOLERANZ_KMH && s >= MIN_SCORE;
+    if (v > seg.limitKmh + GPS_TOLERANZ_KMH) return false;
+    if (s < MIN_SCORE) return false;
+
+    // Der eigentliche Nachweis. `sustainedKmh` ist ein Fuenf-Sekunden-Mittel
+    // und kann eine kurze, deutliche Ueberschreitung verschlucken — gemessen:
+    // 130 km/h auf einem 100er-Abschnitt, sustained-5s 101,9. `withinLimit`
+    // kommt dagegen aus jedem einzelnen Sample.
+    //
+    // Streng auf `true`: fehlt der Nachweis, ist die Antwort nein. Das trifft
+    // Eintraege, die vor dem 09.09.2026 entstanden sind — die koennen ihn
+    // nicht tragen, und "wir wissen es nicht" darf in einer Liste namens
+    // "legal" nicht als Ja gelten.
+    return row.withinLimit === true;
+  }
+
+  /** Die LOKALEN Trip-Ids der Fahrten, die schon online stehen.
+   *
+   *  Steht hier und nicht in app.js, damit es pruefbar ist. Vorher baute app.js
+   *  das Set selbst — aus `t.publishedId`, also aus Online-Ids — und verglich
+   *  sie mit den lokalen Ids der Ranglistenzeilen. Ein stiller Dauerfehler, den
+   *  keine Ansicht meldet: die eigene veroeffentlichte Fahrt stand einfach
+   *  zweimal da. */
+  function veroeffentlichteLokaleIds() {
+    return new Set(getTrips().filter((t) => t.publishedId).map((t) => t.id));
   }
 
   /** Lokale und Online-Zeilen zusammenfuehren.
@@ -195,10 +219,20 @@
    *  das Mischen in einer DOM-gebundenen async-Funktion in app.js, und genau
    *  dort ist der Filter vergessen worden.
    *
-   *  `publishedIds`: eine veroeffentlichte Fahrt liegt lokal UND online vor —
-   *  die Online-Fassung gewinnt, damit sie nicht doppelt zaehlt. */
-  function mischeRanglisten(lokal, online, seg, sort, publishedIds) {
-    const schon = publishedIds instanceof Set ? publishedIds : new Set(publishedIds || []);
+   *  `veroeffentlichteLokaleIds`: die LOKALEN Trip-Ids der Fahrten, die schon
+   *  online stehen. Eine veroeffentlichte Fahrt liegt lokal UND online vor; die
+   *  Online-Fassung gewinnt, damit sie nicht doppelt zaehlt.
+   *
+   *  Die Betonung auf LOKAL ist der Punkt: die lokale Ranglistenzeile traegt
+   *  `t.id`, das Trip-Feld `t.publishedId` traegt dagegen die ONLINE-Id. Wer das
+   *  Set aus `publishedId` baut, vergleicht Online-Ids mit lokalen Ids — die
+   *  treffen sich nie, und jede veroeffentlichte Fahrt stand doppelt in der
+   *  Liste. Genau so war es bis zum 09.09.2026, und der erste Test dazu hat es
+   *  zugedeckt, weil er die lokale Id ins Set legte statt die echte. */
+  function mischeRanglisten(lokal, online, seg, sort, veroeffentlichteLokaleIds) {
+    const schon = veroeffentlichteLokaleIds instanceof Set
+      ? veroeffentlichteLokaleIds
+      : new Set(veroeffentlichteLokaleIds || []);
     const zeilen = (lokal || [])
       .filter((r) => !r.id || !schon.has(r.id))
       .concat(online || []);
@@ -228,6 +262,7 @@
         avgKmh: Math.round(t.avgKmh),
         sustainedKmh: Math.round(t.sustainedKmh),
         hardBraking: t.score.hardBrakingEvents,
+        withinLimit: t.withinLimit === true,
         mode: "public",
         mine: true,
       }));
@@ -262,6 +297,7 @@
     legalSpeedVerfuegbar,
     legalSpeedZulaessig,
     mischeRanglisten,
+    veroeffentlichteLokaleIds,
     GPS_TOLERANZ_KMH,
     MIN_SCORE,
   };
