@@ -51,10 +51,22 @@ service cloud.firestore {
       // Renaming a shared route is allowed only for whoever created it, and only
       // the name may change — nobody gets to move a segment out from under the
       // entries already attached to it.
+      //
+      // Zweiter erlaubter Uebergang: den Urheber loesen. Beim "Alles loeschen"
+      // darf die eigene Kennung nicht als `createdBy` zurueckbleiben, aber die
+      // Strecke selbst muss stehen bleiben — fremde Eintraege zeigen darauf,
+      // und sie zu loeschen wuerde deren Ergebnisse verwaisen lassen. Danach
+      // gehoert die Strecke niemandem mehr; auch die eigenen Rechte daran sind
+      // damit weg, und das ist genau richtig.
       allow update: if signedIn()
         && resource.data.createdBy == request.auth.uid
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name'])
-        && shortText(request.resource.data.name, 80);
+        && (
+             (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name'])
+              && shortText(request.resource.data.name, 80))
+             ||
+             (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['createdBy'])
+              && request.resource.data.createdBy == 'geloescht')
+           );
 
       allow delete: if signedIn() && resource.data.createdBy == request.auth.uid;
     }

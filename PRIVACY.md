@@ -93,6 +93,21 @@ The actual deletion is a **Firestore TTL policy on `expiresAt`**, configured onc
 console (Firestore → TTL → collection `entries`, field `expiresAt`). Until that policy is
 set, expired entries still sit in the database even though nobody can see them any more.
 
+**Measured on 09.09.2026: that policy is not set, and cannot be set yet.** Cloud Firestore
+is disabled in the Firebase project `autobahn-strava` — there is no database to attach a
+policy to, and no entry has ever been stored:
+
+```
+POST accounts:signUp    →  CONFIGURATION_NOT_FOUND
+GET  documents/entries  →  PERMISSION_DENIED — "Cloud Firestore API has not been used in
+                           project autobahn-strava before or it is disabled."
+```
+
+So the number of stored entries without an `expiresAt` is **zero**, not because they were
+cleaned up but because the online leaderboard has never been reachable. The retention rules
+described here take effect the day the project is switched on; setting the TTL policy is
+part of switching it on, and is listed in the README roadmap so it cannot be forgotten.
+
 An entry **without** an `expiresAt` counts as expired. That covers anything published before
 this rule existed — which is the right answer, because an entry with no expiry is exactly
 what this rule removes.

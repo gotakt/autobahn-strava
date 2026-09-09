@@ -59,7 +59,23 @@
 
   // ---- Opt-in ---------------------------------------------------------------
 
+  /** Ist die Online-Rangliste aktiv?
+   *
+   *  Der Schalter ALLEIN reicht nicht. Steht er auf 1 und die Einwilligung
+   *  wird danach ungueltig — geloescht, kaputt, oder der Text hat eine neue
+   *  Fassung —, dann ist die Antwort nein. Sonst koennte weiter hochgeladen
+   *  werden, obwohl niemand mehr zugestimmt hat, und die Zusage "bei neuer
+   *  Fassung wird erneut gefragt" waere wirkungslos.
+   *
+   *  Damit haengt jeder Upload-Pfad an dieser einen Pruefung, statt dass jeder
+   *  Aufrufer daran denken muss. */
   function isEnabled() {
+    return localStorage.getItem(KEY_ENABLED) === "1" && hatEingewilligt();
+  }
+
+  /** Nur der Schalter, ohne die Einwilligung — fuer die Oberflaeche, die
+   *  unterscheiden muss zwischen "aus" und "an, aber Zustimmung fehlt". */
+  function schalterAn() {
     return localStorage.getItem(KEY_ENABLED) === "1";
   }
 
@@ -103,6 +119,21 @@
     const data = await res.json();
     if (!res.ok) throw new Error(describe(data, "Anmeldung fehlgeschlagen"));
     return store(data.idToken, data.refreshToken, data.expiresIn, data.localId);
+  }
+
+  /** Die BESTEHENDE Identitaet, oder ein Fehler. Legt niemals eine neue an.
+   *
+   *  Fuer Loeschen und Export unverzichtbar: `signIn()` faellt bei einem
+   *  Refresh-Fehler auf `signUp` zurueck. Man wuerde dann die Daten einer
+   *  frisch erzeugten, leeren Identitaet loeschen oder exportieren, waehrend
+   *  die eigentlichen Daten unberuehrt online blieben — und haette obendrein
+   *  eine zusaetzliche Kennung erzeugt, die man gerade loswerden wollte. */
+  async function bestehendeSitzung() {
+    const s = session();
+    if (!s) throw new Error("Keine Online-Kennung auf diesem Gerät.");
+    if (s.expiresAt - Date.now() > 5 * 60 * 1000) return s;
+    if (!s.refreshToken) throw new Error("Die Online-Kennung ist abgelaufen und nicht erneuerbar.");
+    return refresh(s.refreshToken);
   }
 
   async function refresh(refreshToken) {
@@ -207,6 +238,13 @@
 
   // Push a trip to the shared board. Returns the created entry id.
   async function publishTrip(trip, segment, area) {
+    // Doppelt geprueft, mit Absicht: isEnabled() deckt es bereits ab, aber
+    // diese Funktion ist der einzige Weg, auf dem Daten das Geraet verlassen.
+    // Eine Schranke, die nur woanders steht, kann beim naechsten Umbau
+    // wegrutschen.
+    if (!hatEingewilligt()) {
+      throw new Error("Für die Online-Rangliste liegt keine gültige Einwilligung vor.");
+    }
     if (!isEnabled()) throw new Error("Online-Rangliste ist nicht aktiviert.");
 
     // Dieselbe Bedingung, unter der die Oberflaeche den Knopf ueberhaupt zeigt —
@@ -344,52 +382,178 @@
       });
   }
 
-  // Every entry this device published — the basis for "delete my online data".
-  async function myEntries() {
-    const s = await signIn();
-    const body = {
-      structuredQuery: {
-        from: [{ collectionId: "entries" }],
-        where: {
-          fieldFilter: { field: { fieldPath: "uid" }, op: "EQUAL", value: { stringValue: s.uid } },
-        },
-        limit: 500,
+  // Eine Seite Treffer fuer diese Kennung. `nach` ist der volle Dokumentname
+  // des letzten Treffers der vorigen Seite.
+  //
+  // Ohne Blaettern endete jede dieser Abfragen bei 500. Beim Loeschen hiess
+  // das: wer mehr veroeffentlicht hat, behielt den Rest online — und die
+  // Kennung, mit der man ihn haette erreichen koennen, wurde danach entfernt.
+  const SEITE = 300;
+
+  async function seiteMeinerEintraege(uid, nach) {
+    const q = {
+      from: [{ collectionId: "entries" }],
+      where: {
+        fieldFilter: { field: { fieldPath: "uid" }, op: "EQUAL", value: { stringValue: uid } },
       },
+      orderBy: [{ field: { fieldPath: "__name__" }, direction: "ASCENDING" }],
+      limit: SEITE,
     };
-    const rows = await authed(`${DB}:runQuery`, { method: "POST", body: JSON.stringify(body) });
-    return (rows || []).filter((r) => r.document).map((r) => r.document.name.split("/").pop());
+    if (nach) q.startAt = { values: [{ referenceValue: nach }], before: false };
+    const rows = await authed(`${DB}:runQuery`, {
+      method: "POST",
+      body: JSON.stringify({ structuredQuery: q }),
+    });
+    return (rows || []).filter((r) => r.document).map((r) => r.document);
+  }
+
+  /** Alle Dokumente dieser Kennung, ueber beliebig viele Seiten. */
+  async function alleMeineEintraege(uid) {
+    const alle = [];
+    let nach = null;
+    for (;;) {
+      const seite = await seiteMeinerEintraege(uid, nach);
+      if (!seite.length) return alle;
+      alle.push(...seite);
+      nach = seite[seite.length - 1].name;
+      if (seite.length < SEITE) return alle;
+    }
   }
 
   async function deleteEntry(id) {
     await authed(`${DB}/entries/${encodeURIComponent(id)}`, { method: "DELETE" });
   }
 
-  // Right to erasure, self-service: removes every entry this identity published,
-  // then drops the local identity so nothing links a future drive to the old ones.
-  async function deleteAllMine() {
-    const ids = await myEntries();
-    for (const id of ids) await deleteEntry(id);
-    localStorage.removeItem(KEY_SESSION);
-    return ids.length;
-  }
-
-  /** Alles, was diese Kennung online stehen hat — fuer den Datenexport.
-   *  Rohe Dokumente, nichts weggelassen. */
-  async function meineEintraege() {
-    const s = await signIn();
-    const body = {
-      structuredQuery: {
-        from: [{ collectionId: "entries" }],
-        where: {
-          fieldFilter: { field: { fieldPath: "uid" }, op: "EQUAL", value: { stringValue: s.uid } },
+  /** Eigene Strecken im geteilten Verzeichnis. */
+  async function meineSegmente(uid) {
+    const rows = await authed(`${DB}:runQuery`, {
+      method: "POST",
+      body: JSON.stringify({
+        structuredQuery: {
+          from: [{ collectionId: "segments" }],
+          where: {
+            fieldFilter: {
+              field: { fieldPath: "createdBy" }, op: "EQUAL", value: { stringValue: uid },
+            },
+          },
+          limit: SEITE,
         },
-        limit: 500,
-      },
-    };
-    const rows = await authed(`${DB}:runQuery`, { method: "POST", body: JSON.stringify(body) });
+      }),
+    });
     return (rows || [])
       .filter((r) => r.document)
       .map((r) => ({ ...fromFields(r.document.fields || {}), id: r.document.name.split("/").pop() }));
+  }
+
+  /** Den persoenlichen Bezug aus einer eigenen Strecke loesen.
+   *
+   *  Die Strecke selbst bleibt: andere Eintraege koennen darauf zeigen, und
+   *  sie zu loeschen wuerde fremde Ergebnisse verwaisen lassen. Entfernt wird
+   *  nur die Verknuepfung zur Kennung. Die Regeln erlauben genau diesen einen
+   *  Uebergang — und danach hat man selbst keine Rechte mehr daran, was
+   *  richtig ist: sie gehoert dann niemandem mehr. */
+  const OHNE_URHEBER = "geloescht";
+
+  async function segmentAnonymisieren(id) {
+    const name = `projects/${CONFIG.projectId}/databases/(default)/documents/segments/${encodeURIComponent(id)}`;
+    await authed(`${DB}:commit`, {
+      method: "POST",
+      body: JSON.stringify({
+        writes: [{
+          update: { name, fields: { createdBy: { stringValue: OHNE_URHEBER } } },
+          updateMask: { fieldPaths: ["createdBy"] },
+          currentDocument: { exists: true },
+        }],
+      }),
+    });
+  }
+
+  /** Das anonyme Firebase-Konto selbst loeschen — nicht nur die Spur davon
+   *  auf diesem Geraet. Ohne das bliebe der Benutzer in der Anmeldeverwaltung
+   *  stehen, und "die Kennung ist weg" waere zu stark formuliert. */
+  async function kontoLoeschen(idToken) {
+    const res = await fetch(`${AUTH}:delete?key=${CONFIG.apiKey}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ idToken }),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(describe(body, "Konto konnte nicht gelöscht werden"));
+    }
+  }
+
+  /** Recht auf Loeschung, in Selbstbedienung.
+   *
+   *  Reihenfolge und Fehlerverhalten sind der eigentliche Inhalt:
+   *
+   *    1. bestehende Kennung holen — NIE eine neue anlegen,
+   *    2. Eintraege seitenweise loeschen, bis keiner mehr da ist,
+   *    3. eigene Strecken vom Urheber loesen (die Strecken bleiben),
+   *    4. das anonyme Konto loeschen,
+   *    5. erst ganz zum Schluss die lokale Spur entfernen.
+   *
+   *  Bricht es zwischendrin ab, bleibt die Kennung erhalten — sonst waere der
+   *  einzige Weg zu den restlichen Daten weg. Der Fehler traegt mit, wie viel
+   *  schon geloescht wurde, damit niemand faelschlich "es wurde nichts
+   *  geloescht" behauptet. Erneutes Ausfuehren ist gefahrlos. */
+  async function deleteAllMine() {
+    const s = await bestehendeSitzung();
+    let geloescht = 0;
+    try {
+      // Immer wieder ab vorn: geloeschte Dokumente fallen aus der Abfrage
+      // heraus, die erste Seite ist also jedes Mal eine andere. Fortschritt
+      // wird an den IDs gemessen, nicht an der Seitengroesse — bei 700
+      // Eintraegen ist auch der zweite Durchgang wieder voll. Kommt eine Seite
+      // zurueck, die nur aus schon behandelten IDs besteht, hat der Server
+      // eine Anfrage angenommen ohne sie anzuwenden: abbrechen statt endlos
+      // weiterzudrehen.
+      let vorigeEintraege = null;
+      for (;;) {
+        const seite = await seiteMeinerEintraege(s.uid, null);
+        if (!seite.length) break;
+        const ids = seite.map((d) => d.name);
+        if (vorigeEintraege && ids.every((id) => vorigeEintraege.has(id))) {
+          throw new Error("Einträge lassen sich nicht löschen.");
+        }
+        vorigeEintraege = new Set(ids);
+        for (const d of seite) {
+          await deleteEntry(d.name.split("/").pop());
+          geloescht += 1;
+        }
+      }
+      // Und dasselbe fuer die eigenen Strecken. `meineSegmente` liefert
+      // hoechstens `SEITE` Stueck; wer mehr angelegt hat, behielte den Rest
+      // verknuepft — und "alles geloescht" waere gelogen. Der Filter ist
+      // `createdBy == uid`, jede geloeste Strecke faellt also aus der
+      // naechsten Abfrage heraus.
+      let vorigeStrecken = null;
+      for (;;) {
+        const seite = await meineSegmente(s.uid);
+        if (!seite.length) break;
+        const ids = seite.map((x) => x.id);
+        if (vorigeStrecken && ids.every((id) => vorigeStrecken.has(id))) {
+          throw new Error("Strecken lassen sich nicht vom Urheber lösen.");
+        }
+        vorigeStrecken = new Set(ids);
+        for (const seg of seite) await segmentAnonymisieren(seg.id);
+      }
+      await kontoLoeschen(s.idToken);
+    } catch (e) {
+      const fehler = new Error(e.message || String(e));
+      fehler.geloescht = geloescht;
+      throw fehler;
+    }
+    localStorage.removeItem(KEY_SESSION);
+    return geloescht;
+  }
+
+  /** Alles, was diese Kennung online stehen hat — fuer den Datenexport.
+   *  Rohe Dokumente, nichts weggelassen, ueber alle Seiten. */
+  async function meineEintraege() {
+    const s = await bestehendeSitzung();
+    const docs = await alleMeineEintraege(s.uid);
+    return docs.map((d) => ({ ...fromFields(d.fields || {}), id: d.name.split("/").pop() }));
   }
 
   global.Cloud = {
@@ -398,10 +562,13 @@
     signIn,
     publishTrip,
     leaderboard,
-    myEntries,
     deleteEntry,
     deleteAllMine,
     meineEintraege,
+    meineSegmente,
+    bestehendeSitzung,
+    schalterAn,
+    OHNE_URHEBER,
     hatEingewilligt,
     einwilligungSetzen,
     einwilligung,

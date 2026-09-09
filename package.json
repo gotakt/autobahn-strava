@@ -7,9 +7,12 @@
   "scripts": {
     "serve": "node scripts/serve.js",
     "test": "node --test tests/*.test.mjs",
+    "test:regeln": "firebase emulators:exec --only firestore --project autobahn-regeltest \"node --test tests/emulator/*.test.mjs\"",
+    "test:regeln:sabotage": "./tests/sabotage-regeln.sh",
     "test:sabotage": "./tests/sabotage-legalspeed.sh",
     "test:sabotage:serve": "./tests/sabotage-serve.sh",
-    "test:sabotage:recorder": "./tests/sabotage-recorder.sh"
+    "test:sabotage:recorder": "./tests/sabotage-recorder.sh",
+    "test:sabotage:loeschen": "./tests/sabotage-loeschen.sh"
   },
   "dependencies": {
     "@capacitor-community/background-geolocation": "^1.2.26",
@@ -19,7 +22,9 @@
   },
   "devDependencies": {
     "@capacitor/cli": "^8.4.2",
+    "@firebase/rules-unit-testing": "^5.0.2",
     "@fontsource/barlow": "^5.3.0",
-    "@fontsource/barlow-condensed": "^5.3.0"
+    "@fontsource/barlow-condensed": "^5.3.0",
+    "firebase": "^12.19.0"
   }
 }

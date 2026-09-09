@@ -49,6 +49,25 @@ for a trip you explicitly publish. See [Online leaderboard](#online-leaderboard)
 
 ## Online leaderboard
 
+> **Status on 09.09.2026: the backend is not switched on, and never has been.**
+> The Firebase project `autobahn-strava` exists, but neither Cloud Firestore nor anonymous
+> sign-in is enabled in it. Measured against the real project, with the client key that
+> ships in `web/js/cloud.js`:
+>
+> ```
+> POST accounts:signUp        →  CONFIGURATION_NOT_FOUND
+> GET  documents/entries      →  PERMISSION_DENIED — "Cloud Firestore API has not been
+>                                used in project autobahn-strava before or it is disabled."
+> ```
+>
+> `firebase firestore:databases:list` fails the same way: there is not even a database.
+> So the shared board has never been live, **zero** entries are stored anywhere, and the
+> retention rules below have never had anything to act on. The client already says so
+> rather than failing blankly — `CONFIGURATION_NOT_FOUND` is mapped to *„Die
+> Online-Rangliste ist serverseitig noch nicht eingerichtet."* Everything in this section
+> describes what happens **once the project is switched on**; today it is code, not a
+> running service.
+
 The app ships with a shared leaderboard backed by Firebase (Firestore over its REST
 endpoints — no SDK). It is **opt-in and off by default.** Nothing leaves the device until
 you both
@@ -69,7 +88,8 @@ because none is stored in the first place — see [`PRIVACY.md`](PRIVACY.md).
 **How long it stays:** a published entry expires after **180 days**. The client writes the
 expiry, `firestore.rules` verifies it is roughly 180 days ahead so nobody can grant
 themselves longer, and expired entries are filtered out of the board even if the cleanup has
-not run yet.
+not run yet. The cleanup itself is a Firestore TTL policy, and it is **not configured** —
+it cannot be, because the database does not exist yet. See [`PRIVACY.md`](PRIVACY.md).
 
 **Before anything is uploaded** you have to agree to a text saying what is transmitted, for
 how long, and how to remove it. The agreement is recorded with a timestamp and a version; if
@@ -232,6 +252,10 @@ All eight modules under `js/` are loaded by `index.html` and all eight are in us
 
 ## Roadmap
 
+- **Switching the backend on.** Cloud Firestore and anonymous sign-in are disabled in the
+  Firebase project, so the online leaderboard is unreachable — see [Online
+  leaderboard](#online-leaderboard). Enabling them also means setting the TTL policy on
+  `entries.expiresAt`, without which nothing is ever actually deleted.
 - **Server-side scoring and cheat validation.** The shared leaderboard exists, but scores
   are computed on the device, so the rules can only check that a value is physically
   possible — not that it is genuine. Treat the board as friendly competition.

@@ -6,9 +6,12 @@
 # Tests noch CI gab.
 #
 # Was hier NICHT laeuft, und warum das benannt statt verschwiegen wird:
-# Scoring-Formel, GPS-Aufzeichnung und die Firestore-Regeln haben noch keine
-# Tests. Sie kommen dazu, wenn sie drankommen — eine Testquote zu erfinden
-# waere kein Fortschritt.
+# Scoring-Formel und GPS-Aufzeichnung haben noch keine Tests. Sie kommen dazu,
+# wenn sie drankommen — eine Testquote zu erfinden waere kein Fortschritt.
+#
+# Die Firestore-Regeln haben seit dem 09.09.2026 welche: sie laufen gegen den
+# echten Emulator, weil gruene JavaScript-Tests ueber eine Regel nichts
+# beweisen — sie laufen nie durch sie hindurch.
 
 name: Pruefung
 
@@ -76,3 +79,31 @@ jobs:
       # Plattform-Download brauchen und wenig beweisen.
       - name: Gegenprobe — kein Watcher ueberlebt den Stopp
         run: npm run test:sabotage:recorder
+
+      # Die DSGVO-Scheibe: Einwilligung, Loeschen ueber alle Seiten, Verhalten
+      # beim Abbruch, und das anonyme Konto selbst. Sechs Richtungen. Die
+      # Seitengrenze ist der Grund, warum das hier steht und nicht von Hand
+      # geprueft wird: mit zwanzig Fahrten sieht alles richtig aus, ab 301
+      # bliebe der Rest online stehen.
+      - name: Gegenprobe — Einwilligung, Loeschen und Konto
+        run: npm run test:sabotage:loeschen
+
+      # Die Firestore-Regeln sind eine Datenschutz-Schranke: Aufbewahrungs-
+      # frist, Schreibrechte, Unveraenderlichkeit. Der Emulator ist eine
+      # Java-Anwendung.
+      - name: Setup Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      # Feste Version statt "latest": ein Emulator, der sich unter der Hand
+      # aendert, macht aus einem roten Lauf eine Ratepartie.
+      - name: Firebase CLI
+        run: npm i -g firebase-tools@15.14.0
+
+      - name: Firestore-Regeln gegen den Emulator
+        run: npm run test:regeln
+
+      - name: Gegenprobe — die Regeltests muessen eine geoeffnete Schranke bemerken
+        run: npm run test:regeln:sabotage

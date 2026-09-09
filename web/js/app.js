@@ -732,11 +732,21 @@
         // weg, mit der man die Online-Eintraege ueberhaupt noch loeschen kann.
         try {
           const n = await Cloud.deleteAllMine();
-          onlineMeldung = "\n" + n + " Online-Eintrag/-Einträge gelöscht.";
+          onlineMeldung =
+          "\n" + n + " Online-Eintrag/-Einträge gelöscht, eigene Strecken vom " +
+          "Urheber gelöst, anonymes Konto entfernt.";
         } catch (e) {
+          // Ehrlich bleiben: die Eintraege werden einzeln geloescht. Scheitert
+          // der siebzehnte, sind sechzehn schon weg. "Es wurde nichts
+          // geloescht" waere dann schlicht falsch.
+          const schon = typeof e.geloescht === "number" ? e.geloescht : 0;
           alert(
-            "Die Online-Einträge konnten nicht gelöscht werden:\n" + e.message +
-            "\n\nEs wurde NICHTS gelöscht. Bitte später erneut versuchen."
+            "Das Löschen der Online-Daten wurde abgebrochen:\n" + e.message +
+            (schon > 0
+              ? `\n\n${schon} Eintrag/Einträge wurden bereits gelöscht, der Rest nicht.`
+              : "\n\nEs wurde noch nichts gelöscht.") +
+            "\n\nDeine lokalen Daten und deine Kennung sind unverändert — " +
+            "du kannst es gefahrlos erneut versuchen."
           );
           return;
         }
@@ -775,11 +785,26 @@
             eintraege: [],
           },
         };
+        daten.vollstaendig = true;
         if (Cloud.uid()) {
           try {
             daten.onlineRangliste.eintraege = await Cloud.meineEintraege();
+            daten.onlineRangliste.eigeneStreckenOnline =
+              await Cloud.meineSegmente(Cloud.uid());
           } catch (e) {
-            daten.onlineRangliste.fehler = "Online-Einträge nicht abrufbar: " + e.message;
+            // Keine Datei ausliefern, die "alles über dich" behauptet und dabei
+            // den Serverteil verschweigt.
+            daten.vollstaendig = false;
+            daten.onlineRangliste.fehler = "Online-Daten nicht abrufbar: " + e.message;
+            daten.hinweis =
+              "UNVOLLSTÄNDIG. Der lokale Teil ist enthalten, die Online-Daten konnten " +
+              "nicht abgerufen werden — siehe onlineRangliste.fehler. Bitte später " +
+              "erneut exportieren.";
+            alert(
+              "Die Online-Daten konnten nicht abgerufen werden:\n" + e.message +
+              "\n\nDie Datei enthält nur den lokalen Teil und ist als unvollständig " +
+              "gekennzeichnet."
+            );
           }
         }
         const blob = new Blob([JSON.stringify(daten, null, 2)], { type: "application/json" });
@@ -794,7 +819,13 @@
       }
     });
 
+    // Steht der Schalter auf an, aber die Einwilligung ist ungueltig geworden,
+    // zeigt die Oberflaeche "aus" — und das stimmt auch: hochgeladen wird
+    // nichts mehr. Beim naechsten Einschalten wird wieder gefragt.
     $("#optCloud").checked = Cloud.isEnabled();
+    if (Cloud.schalterAn() && !Cloud.hatEingewilligt()) {
+      try { Cloud.setEnabled(false); } catch (e) {}
+    }
     updateCloudStatus();
     $("#optCloud").addEventListener("change", async () => {
       const on = $("#optCloud").checked;
