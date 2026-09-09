@@ -1,5 +1,10 @@
 # Autobahn Strava 🛣️
 
+[![Pruefung](https://github.com/gotakt/autobahn-strava/actions/workflows/pruefung.yml/badge.svg)](https://github.com/gotakt/autobahn-strava/actions/workflows/pruefung.yml)
+![50 tests](https://img.shields.io/badge/tests-50-3DDC84)
+![no build step](https://img.shields.io/badge/build%20step-none-5B8DEF)
+![licence MIT](https://img.shields.io/badge/licence-MIT-9AA5BF)
+
 **Strava for Autobahn journeys — but the winning metric is *best legal drive*, not top speed.**
 
 Record a drive with your phone's GPS, then compare it against other people who drove the
@@ -8,6 +13,12 @@ same Autobahn section. Instead of rewarding whoever went fastest, the leaderboar
 
 > ⚠️ This is not a racing app. Top-speed ranking on public roads is deliberately **not**
 > a feature — see [Safety & the law](#safety--the-law).
+
+![The leaderboard, ranked by Legal-Drive Score](docs/screenshot-rangliste.png)
+
+<sub>The same-segment leaderboard. The entries marked *Demo* are synthetic, so the board is
+not empty on first run. On a stretch without a fixed limit there is no "fastest legal drive"
+view at all — only the score.</sub>
 
 ---
 
