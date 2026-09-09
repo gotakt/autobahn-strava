@@ -81,7 +81,7 @@ jobs:
         run: npm run test:sabotage:recorder
 
       # Die DSGVO-Scheibe: Einwilligung, Loeschen ueber alle Seiten, Verhalten
-      # beim Abbruch, und das anonyme Konto selbst. Sechs Richtungen. Die
+      # beim Abbruch, und das anonyme Konto selbst. Sieben Richtungen. Die
       # Seitengrenze ist der Grund, warum das hier steht und nicht von Hand
       # geprueft wird: mit zwanzig Fahrten sieht alles richtig aus, ab 301
       # bliebe der Rest online stehen.

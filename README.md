@@ -1,7 +1,7 @@
 # Autobahn Strava 🛣️
 
 [![Pruefung](https://github.com/gotakt/autobahn-strava/actions/workflows/pruefung.yml/badge.svg)](https://github.com/gotakt/autobahn-strava/actions/workflows/pruefung.yml)
-![50 tests](https://img.shields.io/badge/tests-50-3DDC84)
+![103 tests](https://img.shields.io/badge/tests-103-3DDC84)
 ![licence MIT](https://img.shields.io/badge/licence-MIT-9AA5BF)
 
 **Strava for Autobahn journeys — but the winning metric is *best legal drive*, not top speed.**
@@ -66,7 +66,8 @@ for a trip you explicitly publish. See [Online leaderboard](#online-leaderboard)
 > rather than failing blankly — `CONFIGURATION_NOT_FOUND` is mapped to *„Die
 > Online-Rangliste ist serverseitig noch nicht eingerichtet."* Everything in this section
 > describes what happens **once the project is switched on**; today it is code, not a
-> running service.
+> running service. Switching it on has a binding order —
+> [`docs/BACKEND-GO-LIVE.md`](docs/BACKEND-GO-LIVE.md).
 
 The app ships with a shared leaderboard backed by Firebase (Firestore over its REST
 endpoints — no SDK). It is **opt-in and off by default.** Nothing leaves the device until
@@ -152,6 +153,33 @@ and don't touch it while driving. Recording is fully automatic — see below.
 
 ---
 
+## Tests
+
+The badge says **103**, and that is the number of test cases — nothing else counted in.
+
+| | | |
+|---|---|---|
+| `npm test` | 84 | plain Node tests, no services needed |
+| `npm run test:regeln` | 19 | `firestore.rules` against the Firestore emulator (needs Java) |
+| | **103** | |
+
+The emulator suite lives in `tests/emulator/` rather than beside the others, and that is
+deliberate: `npm test` matches `tests/*.test.mjs`, and without a running emulator its
+`before()` throws. `node --test` then reports those cases as `cancelled` while printing
+`fail 0` — a line that looks green although 19 checks never ran.
+
+**What is *not* in the 103.** There are also **17 sabotage directions** across five scripts
+(`npm run test:sabotage`, `:serve`, `:recorder`, `:loeschen`, `test:regeln:sabotage`). Each
+one breaks a promise on purpose and requires a **named** test case to go red — an exit code
+alone is not accepted, because a typo would produce one too. They are counter-checks on the
+tests, not tests, so counting them would inflate the number. Every one of them runs in CI.
+
+A green suite proves nothing until it has been shown that it can go red. That is what the
+sabotage scripts are for, and it is why several of the bugs in this repository's history
+were found by breaking working code rather than by writing more of it.
+
+---
+
 ## Native iOS
 
 The repository contains a Capacitor iOS target (`ios/App/App.xcodeproj`). It exists for one
@@ -170,7 +198,7 @@ open ios/App/App.xcodeproj
 clean checkout it must leave the working tree unchanged — if `git status` shows a diff
 afterwards, something committed is out of date.
 
-**The build is verified — on one toolchain.** Measured on 09.09.2026:
+**The build runs — on one toolchain.** Measured on 09.09.2026:
 
 | | |
 |---|---|
@@ -179,6 +207,8 @@ afterwards, something committed is out of date.
 | Deployment target | iOS 15.0 |
 | Result | `** BUILD SUCCEEDED **`, 0 errors |
 | Product | `App.app`, 5.6 MB, with all 24 web assets in the bundle |
+| Installed on | simulator `AutobahnProbe` (`1B6B60A5…`), iOS 26.5 |
+| Launched | yes — `de.autobahnstrava.app`, and the UI rendered: the Record tab with the public-road / track switch, the speed readout and the tab bar |
 
 ```bash
 xcodebuild -project ios/App/App.xcodeproj -scheme App -configuration Debug \
@@ -189,18 +219,31 @@ xcodebuild -project ios/App/App.xcodeproj -scheme App -configuration Debug \
 The only warning is `appintentsmetadataprocessor: Metadata extraction skipped. No
 AppIntents.framework dependency found.` — expected for an app that uses no App Intents.
 
-**What is still not proven.** This is a *compile* proof on a simulator toolchain. Nobody has
-run this build on a physical iPhone, and nobody has driven with it. In particular the thing
-the native shell exists for — background location with the screen locked — has **not** been
-observed on real hardware. That boundary is deliberate and stays documented rather than
+**What is still not proven.** The proof reaches as far as: it compiles, installs, starts and
+draws its interface on a simulator. It stops there. Nobody has run this build on a physical
+iPhone and nobody has driven with it, so none of the following has been observed:
+
+- the location permission dialogs, and what the app does when permission is refused;
+- **background location with the screen locked** — the one thing the native shell exists
+  for, and the thing `Info.plist` makes a promise about;
+- real GPS on real hardware, at real speed.
+
+A simulator has no GPS receiver and no lock-screen power management, so it cannot show any
+of that even in principle. That boundary is deliberate and stays documented rather than
 quietly implied away.
 
-**A note on the plugin.** On 08.09.2026 `npx cap sync ios` warned that
+**A note on the plugin.** `npx cap sync ios` warns that
 `@capacitor-community/background-geolocation` is built for Capacitor 7 while this project
-uses Capacitor 8. On 09.09.2026 that warning no longer appeared — neither on `cap sync ios`
-nor on a full `cap sync` — and the build produced no related error. The package's own
-metadata asks for `@capacitor/core >=3.0.0`. Recorded here as an observation, not as a
-resolved defect.
+uses Capacitor 8. An earlier note here said the warning had stopped appearing. It has not.
+Measured on 09.09.2026: after a fresh `npm ci` it appeared on the **first** `cap sync ios`
+and then not on the second or third, with an identical `Package.swift` written each time.
+So it is run-dependent, not gone — which is exactly why the earlier reading was wrong.
+
+The build produces no related error either way. The package's own metadata asks for
+`@capacitor/core >=3.0.0`; the Capacitor-7 figure comes from its devDependency on
+`@capacitor/core ^7.0.0`. Recorded as a known, run-dependent observation. **No dependency is
+being changed on the strength of it** — an upgrade would need its own slice and its own
+proof.
 
 There is no iOS build in CI. A macOS runner plus a platform download, for a repository
 without signing certificates, would cost a lot and prove little.
@@ -254,8 +297,10 @@ All eight modules under `js/` are loaded by `index.html` and all eight are in us
 
 - **Switching the backend on.** Cloud Firestore and anonymous sign-in are disabled in the
   Firebase project, so the online leaderboard is unreachable — see [Online
-  leaderboard](#online-leaderboard). Enabling them also means setting the TTL policy on
-  `entries.expiresAt`, without which nothing is ever actually deleted.
+  leaderboard](#online-leaderboard). This is *not* a matter of flipping two switches: the
+  region is irreversible, TTL needs billing, and Firebase's automatic cleanup of anonymous
+  accounts would break the 180-day erasure path. The order is binding and written down in
+  [`docs/BACKEND-GO-LIVE.md`](docs/BACKEND-GO-LIVE.md).
 - **Server-side scoring and cheat validation.** The shared leaderboard exists, but scores
   are computed on the device, so the rules can only check that a value is physically
   possible — not that it is genuine. Treat the board as friendly competition.
