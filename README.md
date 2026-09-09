@@ -2,7 +2,6 @@
 
 [![Pruefung](https://github.com/gotakt/autobahn-strava/actions/workflows/pruefung.yml/badge.svg)](https://github.com/gotakt/autobahn-strava/actions/workflows/pruefung.yml)
 ![50 tests](https://img.shields.io/badge/tests-50-3DDC84)
-![no build step](https://img.shields.io/badge/build%20step-none-5B8DEF)
 ![licence MIT](https://img.shields.io/badge/licence-MIT-9AA5BF)
 
 **Strava for Autobahn journeys — but the winning metric is *best legal drive*, not top speed.**
