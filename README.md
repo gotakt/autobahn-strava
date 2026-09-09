@@ -198,6 +198,25 @@ open ios/App/App.xcodeproj
 clean checkout it must leave the working tree unchanged — if `git status` shows a diff
 afterwards, something committed is out of date.
 
+**The Swift package graph is pinned, and the pin is committed.**
+`ios/App/App.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved` is tracked
+on purpose — it records the versions SwiftPM actually resolved, which is what makes a build
+reproducible on someone else's machine. It is *not* in `.gitignore`, and it should not be:
+it is shared workspace data, in the same folder as the `IDEWorkspaceChecks.plist` this
+repository already tracks, while `xcuserdata/` stays ignored.
+
+It earns its place here. `CapApp-SPM/Package.swift` asks for `capacitor-swift-pm`
+**exactly** `8.4.2`, while the background-geolocation package asks for `from: "7.0.0"`. The
+resolved graph is the record that those two met at 8.4.2 and that nothing else crept in — a
+single pin, no transitive surprises. To build strictly against the committed file instead of
+re-resolving:
+
+```bash
+xcodebuild -project ios/App/App.xcodeproj -scheme App -configuration Debug \
+  -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
+  -disableAutomaticPackageResolution CODE_SIGNING_ALLOWED=NO build
+```
+
 **The build runs — on one toolchain.** Measured on 09.09.2026:
 
 | | |
@@ -228,9 +247,11 @@ iPhone and nobody has driven with it, so none of the following has been observed
   for, and the thing `Info.plist` makes a promise about;
 - real GPS on real hardware, at real speed.
 
-A simulator has no GPS receiver and no lock-screen power management, so it cannot show any
-of that even in principle. That boundary is deliberate and stays documented rather than
-quietly implied away.
+The simulator *can* exercise permission flows and simulated Core Location data — Xcode can
+feed it a fixed location or a whole GPX route — but none of that was part of this proof. What
+it cannot do is prove real GPS reception, or background-location behaviour on a physical,
+locked iPhone; those depend on hardware and on the power management of a real device. That
+boundary is deliberate and stays documented rather than quietly implied away.
 
 **A note on the plugin.** `npx cap sync ios` warns that
 `@capacitor-community/background-geolocation` is built for Capacitor 7 while this project
