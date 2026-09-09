@@ -137,18 +137,37 @@ open ios/App/App.xcodeproj
 clean checkout it must leave the working tree unchanged — if `git status` shows a diff
 afterwards, something committed is out of date.
 
-**What is proven and what is not.** The Swift package graph resolves and the plugin is
-wired into the recorder's real code path. An actual Xcode build is **not** proven: on the
-machine used here, `xcodebuild` refused with *"iOS 26.5 is not installed. Please download
-and install the platform from Xcode > Settings > Components."* That is a missing local
-toolchain component, not a known defect in this project — but it is also not a build proof,
-which is why this target is not called verified or fully supported.
+**The build is verified — on one toolchain.** Measured on 09.09.2026:
 
-**A known finding, not a defect.** `npx cap sync ios` warns that
+| | |
+|---|---|
+| Xcode | 26.6 (17F113) |
+| Simulator runtime | iOS 26.5 (23F77), arm64 |
+| Deployment target | iOS 15.0 |
+| Result | `** BUILD SUCCEEDED **`, 0 errors |
+| Product | `App.app`, 5.6 MB, with all 24 web assets in the bundle |
+
+```bash
+xcodebuild -project ios/App/App.xcodeproj -scheme App -configuration Debug \
+  -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
+  CODE_SIGNING_ALLOWED=NO build
+```
+
+The only warning is `appintentsmetadataprocessor: Metadata extraction skipped. No
+AppIntents.framework dependency found.` — expected for an app that uses no App Intents.
+
+**What is still not proven.** This is a *compile* proof on a simulator toolchain. Nobody has
+run this build on a physical iPhone, and nobody has driven with it. In particular the thing
+the native shell exists for — background location with the screen locked — has **not** been
+observed on real hardware. That boundary is deliberate and stays documented rather than
+quietly implied away.
+
+**A note on the plugin.** On 08.09.2026 `npx cap sync ios` warned that
 `@capacitor-community/background-geolocation` is built for Capacitor 7 while this project
-uses Capacitor 8. The package's own metadata asks for `@capacitor/core >=3.0.0`, so the
-warning does not by itself contradict anything. Only a real build and a drive on a device
-will settle whether it matters.
+uses Capacitor 8. On 09.09.2026 that warning no longer appeared — neither on `cap sync ios`
+nor on a full `cap sync` — and the build produced no related error. The package's own
+metadata asks for `@capacitor/core >=3.0.0`. Recorded here as an observation, not as a
+resolved defect.
 
 There is no iOS build in CI. A macOS runner plus a platform download, for a repository
 without signing certificates, would cost a lot and prove little.
