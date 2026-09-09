@@ -155,14 +155,25 @@
             <b>Der gefahrene Weg wird nie übertragen.</b>
             Es gibt kein Konto: die Anmeldung ist anonym, ohne Name oder E-Mail.
             Daten liegen in der EU. Ohne Veröffentlichung verlässt nichts das Gerät.
+            <b>Veröffentlichte Einträge verfallen nach 180 Tagen.</b>
           </p>
           <p class="tiny muted" id="cloudStatus"></p>
-          <button id="btnCloudWipe" class="btn btn-ghost">Meine Online-Daten löschen</button>
+        </div>
+        <div class="card">
+          <h3>Deine Daten</h3>
+          <p class="tiny muted">
+            Lädt alles herunter, was über dich gespeichert ist: Profil, Fahrten, eigene
+            Strecken und — falls du welche veröffentlicht hast — deine Online-Einträge.
+            Als JSON-Datei, ohne dass du jemanden fragen musst.
+          </p>
+          <button id="btnExport" class="btn btn-ghost">Daten exportieren</button>
         </div>
         <div class="card danger-card">
-          <h3>Daten löschen</h3>
+          <h3>Alles löschen</h3>
           <p class="tiny muted">
-            Alle Fahrten &amp; dein Profil werden vollständig von diesem Gerät entfernt.
+            Entfernt Fahrten und Profil von diesem Gerät — <b>und</b> alle von dir
+            veröffentlichten Einträge aus der Online-Rangliste, samt deiner anonymen
+            Kennung. Ein Weg, nicht zwei.
           </p>
           <button id="btnWipe" class="btn btn-danger">Alles löschen</button>
         </div>

@@ -62,28 +62,79 @@ once enabled nothing is transmitted until the user presses publish on one specif
 
 - Toggle any trip between private and shared.
 - Delete any single trip.
-- **Two separate delete actions in Settings**, and it matters which one is used:
+- **One delete action in Settings**, and it really removes everything:
 
-| Action | Removes | Does **not** remove |
-|---|---|---|
-| *Alle lokalen Daten löschen* | all local trips, the profile, self-created routes | published online entries, the anonymous identity `as_cloud_session` |
-| *Meine Online-Daten löschen* | every entry this identity published, then the identity itself | local trips and profile |
+  **One action, not two.** *Alles löschen* removes the local trips, the profile and
+  self-created routes, **and** every entry this identity ever published, **and** the identity
+  itself, **and** the recorded consent.
 
-  Using only the local one leaves published entries online **and** keeps the identity, so a
-  later published drive would be linked to the earlier ones. To leave nothing behind, use
-  both. This is a known rough edge, described here rather than glossed over.
+  The online part runs first on purpose: if it fails, nothing is deleted and you can try
+  again. The other way round the identity would be gone and with it the only way to reach
+  those entries.
+
+  Until 09.09.2026 these were two separate buttons, and pressing only the local one left the
+  published entries online and kept the identity — so a later drive would have been linked to
+  the earlier ones.
+
+## Retention
+
+**A published entry expires after 180 days.** The purpose is comparing drives on the same
+stretch; half a year covers that. Whoever wants to stay on the board drives again.
+
+This is enforced in three places, because one is not enough:
+
+1. the client writes an `expiresAt` timestamp when publishing;
+2. `firestore.rules` requires it to be roughly 180 days ahead (±1 day for clock skew), so
+   nobody can grant themselves a longer one;
+3. expired entries are filtered out when the board is rendered — a promise that only takes
+   effect once a cleanup job happens to run is not a promise.
+
+The actual deletion is a **Firestore TTL policy on `expiresAt`**, configured once in the
+console (Firestore → TTL → collection `entries`, field `expiresAt`). Until that policy is
+set, expired entries still sit in the database even though nobody can see them any more.
+
+**Measured on 09.09.2026: that policy is not set, and cannot be set yet.** Cloud Firestore
+is disabled in the Firebase project `autobahn-strava` — there is no database to attach a
+policy to, and no entry has ever been stored:
+
+```
+POST accounts:signUp    →  CONFIGURATION_NOT_FOUND
+GET  documents/entries  →  PERMISSION_DENIED — "Cloud Firestore API has not been used in
+                           project autobahn-strava before or it is disabled."
+```
+
+So the number of stored entries without an `expiresAt` is **zero**, not because they were
+cleaned up but because the online leaderboard has never been reachable. The retention rules
+described here take effect the day the project is switched on; setting the TTL policy is
+part of switching it on, and is listed in the README roadmap so it cannot be forgotten.
+
+An entry **without** an `expiresAt` counts as expired. That covers anything published before
+this rule existed — which is the right answer, because an entry with no expiry is exactly
+what this rule removes.
+
+## Consent
+
+Switching the online leaderboard on requires agreeing to a text that names what is
+transmitted, when, for how long, and how to get rid of it. A toggle alone is not consent.
+
+The agreement is recorded locally with a timestamp and a **version number**. If the text
+changes materially the version is raised and the question is asked again — consent to an old
+text is not consent to a new one. Switching the feature **off** never asks anything: a
+withdrawal must not depend on anything.
+
+## Export
+
+**Settings → Deine Daten → Daten exportieren** writes a JSON file containing everything held
+about you: profile, trips, self-created routes, the on/off state, your anonymous id, the
+recorded consent, and — if you published any — your online entries fetched live from the
+server. No request to anyone, no waiting period.
 
 ## Still open
 
-The online leaderboard exists, so the questions below are live ones, not future ones:
-
-- **No retention limit.** A published entry stays until its author deletes it. There is no
-  automatic expiry.
-- **No export.** Deletion is self-service; taking your data with you is not implemented.
-- **No sign-up text.** There is no consent screen beyond the settings toggle and the note
-  beside it.
 - **Scores are computed on the device.** The rules can only check that a value is physically
-  possible, not that it is genuine. Server-side scoring is the fix and is not built.
+  possible, not that it is genuine. Server-side scoring (Cloud Functions, which need the
+  Blaze plan) is the fix and is not built. Until then the board is friendly competition, not
+  evidence.
 
 ## Not collected
 

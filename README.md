@@ -33,7 +33,7 @@ view at all — only the score.</sub>
 - 🔒 **Privacy controls** — trips default to private, the first & last 500 m are trimmed
   before anything is measured **on drives long enough for that to work**, the raw GPS path is
   never stored at all, and any trip can be deleted. Local data and published online entries
-  have **separate** delete buttons — see [Deleting things](#deleting-things).
+  can be deleted — local and published, in one action. See [Deleting things](#deleting-things).
 - 🌐 **Optional online leaderboard** — off until you switch it on, and then still per trip.
 - 🕵️ **GPS-cheating detection** — implausible speeds, teleport jumps and junk-accuracy
   traces are flagged and excluded from ranking.
@@ -48,6 +48,25 @@ for a trip you explicitly publish. See [Online leaderboard](#online-leaderboard)
 ---
 
 ## Online leaderboard
+
+> **Status on 09.09.2026: the backend is not switched on, and never has been.**
+> The Firebase project `autobahn-strava` exists, but neither Cloud Firestore nor anonymous
+> sign-in is enabled in it. Measured against the real project, with the client key that
+> ships in `web/js/cloud.js`:
+>
+> ```
+> POST accounts:signUp        →  CONFIGURATION_NOT_FOUND
+> GET  documents/entries      →  PERMISSION_DENIED — "Cloud Firestore API has not been
+>                                used in project autobahn-strava before or it is disabled."
+> ```
+>
+> `firebase firestore:databases:list` fails the same way: there is not even a database.
+> So the shared board has never been live, **zero** entries are stored anywhere, and the
+> retention rules below have never had anything to act on. The client already says so
+> rather than failing blankly — `CONFIGURATION_NOT_FOUND` is mapped to *„Die
+> Online-Rangliste ist serverseitig noch nicht eingerichtet."* Everything in this section
+> describes what happens **once the project is switched on**; today it is code, not a
+> running service.
 
 The app ships with a shared leaderboard backed by Firebase (Firestore over its REST
 endpoints — no SDK). It is **opt-in and off by default.** Nothing leaves the device until
@@ -66,21 +85,35 @@ anonymous user id.
 **What is never uploaded:** the GPS path. No lat/lon of where you actually drove is sent,
 because none is stored in the first place — see [`PRIVACY.md`](PRIVACY.md).
 
+**How long it stays:** a published entry expires after **180 days**. The client writes the
+expiry, `firestore.rules` verifies it is roughly 180 days ahead so nobody can grant
+themselves longer, and expired entries are filtered out of the board even if the cleanup has
+not run yet. The cleanup itself is a Firestore TTL policy, and it is **not configured** —
+it cannot be, because the database does not exist yet. See [`PRIVACY.md`](PRIVACY.md).
+
+**Before anything is uploaded** you have to agree to a text saying what is transmitted, for
+how long, and how to remove it. The agreement is recorded with a timestamp and a version; if
+the text changes materially, you are asked again. Switching the feature off never asks.
+
+**Taking your data with you:** *Settings → Deine Daten → Daten exportieren* writes a JSON
+file with everything held about you, including your online entries fetched live.
+
 **Who you are online:** switching the feature on creates an anonymous Firebase identity —
 no email, no password, no profile. It is kept in `localStorage` under `as_cloud_session`
 and is the only thing linking two of your published drives to each other.
 
 ### Deleting things
 
-There are **two separate paths**, and one does not do the other's work:
+**One action.** *Alles löschen* removes the local trips, the profile and self-created
+routes, **and** every entry this identity ever published, **and** the identity itself, **and**
+the recorded consent.
 
-| Action | Removes | Leaves |
-|---|---|---|
-| **Alle lokalen Daten löschen** | local trips, profile, self-created routes | published online entries, `as_cloud_session` |
-| **Meine Online-Daten löschen** | every entry this identity published, then the identity | local trips and profile |
+The online part runs first on purpose: if it fails, nothing is deleted and you can try again.
+The other way round the identity would be gone — and with it the only way to reach those
+entries.
 
-To leave nothing behind, use both. Merging them into one button is on the list; until then
-this table is the honest description.
+Until 09.09.2026 these were two buttons, and pressing only the local one left the published
+entries online and kept the identity.
 
 ---
 
@@ -187,8 +220,9 @@ This app is designed around German road law and the GDPR:
   true speed can change between location updates.
 - **Privacy by design (GDPR):** nicknames instead of names, private-by-default trips,
   first/last 500 m trimmed where the drive is long enough, no raw route stored or uploaded at
-  all, self-service deletion for local data and for published entries (two separate actions),
-  no video/dashcam recording.
+  all, one-action deletion covering local data and published entries, a consent text before
+  anything can be uploaded, a 180-day retention limit, self-service export, no video/dashcam
+  recording.
 
 See [`SAFETY.md`](SAFETY.md) and [`PRIVACY.md`](PRIVACY.md) for detail.
 
@@ -218,6 +252,10 @@ All eight modules under `js/` are loaded by `index.html` and all eight are in us
 
 ## Roadmap
 
+- **Switching the backend on.** Cloud Firestore and anonymous sign-in are disabled in the
+  Firebase project, so the online leaderboard is unreachable — see [Online
+  leaderboard](#online-leaderboard). Enabling them also means setting the TTL policy on
+  `entries.expiresAt`, without which nothing is ever actually deleted.
 - **Server-side scoring and cheat validation.** The shared leaderboard exists, but scores
   are computed on the device, so the rules can only check that a value is physically
   possible — not that it is genuine. Treat the board as friendly competition.
