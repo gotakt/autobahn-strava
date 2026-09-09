@@ -33,7 +33,7 @@ view at all — only the score.</sub>
 - 🔒 **Privacy controls** — trips default to private, the first & last 500 m are trimmed
   before anything is measured **on drives long enough for that to work**, the raw GPS path is
   never stored at all, and any trip can be deleted. Local data and published online entries
-  have **separate** delete buttons — see [Deleting things](#deleting-things).
+  can be deleted — local and published, in one action. See [Deleting things](#deleting-things).
 - 🌐 **Optional online leaderboard** — off until you switch it on, and then still per trip.
 - 🕵️ **GPS-cheating detection** — implausible speeds, teleport jumps and junk-accuracy
   traces are flagged and excluded from ranking.
@@ -66,21 +66,34 @@ anonymous user id.
 **What is never uploaded:** the GPS path. No lat/lon of where you actually drove is sent,
 because none is stored in the first place — see [`PRIVACY.md`](PRIVACY.md).
 
+**How long it stays:** a published entry expires after **180 days**. The client writes the
+expiry, `firestore.rules` verifies it is roughly 180 days ahead so nobody can grant
+themselves longer, and expired entries are filtered out of the board even if the cleanup has
+not run yet.
+
+**Before anything is uploaded** you have to agree to a text saying what is transmitted, for
+how long, and how to remove it. The agreement is recorded with a timestamp and a version; if
+the text changes materially, you are asked again. Switching the feature off never asks.
+
+**Taking your data with you:** *Settings → Deine Daten → Daten exportieren* writes a JSON
+file with everything held about you, including your online entries fetched live.
+
 **Who you are online:** switching the feature on creates an anonymous Firebase identity —
 no email, no password, no profile. It is kept in `localStorage` under `as_cloud_session`
 and is the only thing linking two of your published drives to each other.
 
 ### Deleting things
 
-There are **two separate paths**, and one does not do the other's work:
+**One action.** *Alles löschen* removes the local trips, the profile and self-created
+routes, **and** every entry this identity ever published, **and** the identity itself, **and**
+the recorded consent.
 
-| Action | Removes | Leaves |
-|---|---|---|
-| **Alle lokalen Daten löschen** | local trips, profile, self-created routes | published online entries, `as_cloud_session` |
-| **Meine Online-Daten löschen** | every entry this identity published, then the identity | local trips and profile |
+The online part runs first on purpose: if it fails, nothing is deleted and you can try again.
+The other way round the identity would be gone — and with it the only way to reach those
+entries.
 
-To leave nothing behind, use both. Merging them into one button is on the list; until then
-this table is the honest description.
+Until 09.09.2026 these were two buttons, and pressing only the local one left the published
+entries online and kept the identity.
 
 ---
 
@@ -187,8 +200,9 @@ This app is designed around German road law and the GDPR:
   true speed can change between location updates.
 - **Privacy by design (GDPR):** nicknames instead of names, private-by-default trips,
   first/last 500 m trimmed where the drive is long enough, no raw route stored or uploaded at
-  all, self-service deletion for local data and for published entries (two separate actions),
-  no video/dashcam recording.
+  all, one-action deletion covering local data and published entries, a consent text before
+  anything can be uploaded, a 180-day retention limit, self-service export, no video/dashcam
+  recording.
 
 See [`SAFETY.md`](SAFETY.md) and [`PRIVACY.md`](PRIVACY.md) for detail.
 

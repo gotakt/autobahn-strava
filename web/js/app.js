@@ -708,12 +708,89 @@
       refreshWho();
       alert("Gespeichert.");
     });
-    $("#btnWipe").addEventListener("click", () => {
-      if (confirm("Wirklich ALLE Fahrten und dein Profil löschen? Das kann nicht rückgängig gemacht werden.")) {
-        Store.deleteAll();
-        refreshWho();
-        renderTrips();
-        alert("Alle lokalen Daten gelöscht.");
+    // EIN Loeschweg statt zwei. Vorher gab es "Alles löschen" (nur lokal) und
+    // daneben "Meine Online-Daten löschen". Wer nur den ersten drueckte, liess
+    // seine veroeffentlichten Eintraege online stehen UND behielt die anonyme
+    // Kennung, an der eine spaetere Fahrt wieder gehangen haette. "Alles"
+    // heisst jetzt alles.
+    $("#btnWipe").addEventListener("click", async () => {
+      const online = Cloud.isEnabled() || Cloud.uid();
+      const frage = online
+        ? "Wirklich ALLES löschen?\n\n" +
+          "- alle Fahrten und dein Profil auf diesem Gerät\n" +
+          "- alle von dir veröffentlichten Einträge in der Online-Rangliste\n" +
+          "- deine anonyme Kennung\n\n" +
+          "Das kann nicht rückgängig gemacht werden."
+        : "Wirklich ALLE Fahrten und dein Profil löschen?\n\n" +
+          "Das kann nicht rückgängig gemacht werden.";
+      if (!confirm(frage)) return;
+
+      let onlineMeldung = "";
+      if (online) {
+        // Zuerst online: schlaegt das fehl, sind die lokalen Daten noch da und
+        // der Nutzer kann es erneut versuchen. Andersherum waere die Kennung
+        // weg, mit der man die Online-Eintraege ueberhaupt noch loeschen kann.
+        try {
+          const n = await Cloud.deleteAllMine();
+          onlineMeldung = "\n" + n + " Online-Eintrag/-Einträge gelöscht.";
+        } catch (e) {
+          alert(
+            "Die Online-Einträge konnten nicht gelöscht werden:\n" + e.message +
+            "\n\nEs wurde NICHTS gelöscht. Bitte später erneut versuchen."
+          );
+          return;
+        }
+      }
+      Store.deleteAll();
+      Cloud.einwilligungSetzen(false);
+      try { Cloud.setEnabled(false); } catch (e) {}
+      $("#optCloud").checked = false;
+      refreshWho();
+      renderTrips();
+      updateCloudStatus();
+      alert("Alle lokalen Daten gelöscht." + onlineMeldung);
+    });
+
+    // Datenauskunft nach Art. 15/20 DSGVO, ohne dass jemand gefragt werden
+    // muss: alles, was ueber diese Person gespeichert ist, in einer Datei.
+    $("#btnExport").addEventListener("click", async () => {
+      const btn = $("#btnExport");
+      const alterText = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = "Wird zusammengestellt …";
+      try {
+        const daten = {
+          erzeugtAm: new Date().toISOString(),
+          hinweis:
+            "Alles, was diese App über dich gespeichert hat. Lokale Fahrten enthalten " +
+            "keine GPS-Koordinaten — die werden nach der Auswertung verworfen.",
+          profil: Store.getProfile(),
+          fahrten: Store.getTrips(),
+          eigeneStrecken: Segments.all().filter((s) => s.custom),
+          onlineRangliste: {
+            eingeschaltet: Cloud.isEnabled(),
+            anonymeKennung: Cloud.uid(),
+            einwilligung: Cloud.einwilligung(),
+            aufbewahrungTage: Store.AUFBEWAHRUNG_TAGE,
+            eintraege: [],
+          },
+        };
+        if (Cloud.uid()) {
+          try {
+            daten.onlineRangliste.eintraege = await Cloud.meineEintraege();
+          } catch (e) {
+            daten.onlineRangliste.fehler = "Online-Einträge nicht abrufbar: " + e.message;
+          }
+        }
+        const blob = new Blob([JSON.stringify(daten, null, 2)], { type: "application/json" });
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = "autobahn-strava-daten-" + new Date().toISOString().slice(0, 10) + ".json";
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = alterText;
       }
     });
 
@@ -721,6 +798,31 @@
     updateCloudStatus();
     $("#optCloud").addEventListener("change", async () => {
       const on = $("#optCloud").checked;
+
+      // Einschalten heisst: ab jetzt koennen Daten dieses Geraets zu einem
+      // fremden Server gehen. Dafuer reicht ein Schalter nicht — es braucht
+      // eine Zustimmung zu einem Text, der sagt was, wann und wie lange.
+      // Ausschalten braucht dagegen nie eine Rueckfrage.
+      if (on && !Cloud.hatEingewilligt()) {
+        const text =
+          "Online-Rangliste einschalten\n\n" +
+          "Was uebertragen wird, und nur wenn du eine Fahrt ausdruecklich veroeffentlichst:\n" +
+          "- Spitzname, Wertung, Tempo-Kennzahlen, reduzierter Tempo-Verlauf\n" +
+          "- Start- und Zielpunkt der Strecke, nach dem 500-m-Trimmen\n" +
+          "- eine anonyme Kennung. Kein Name, keine E-Mail, kein Konto.\n\n" +
+          "Was NIE uebertragen wird:\n" +
+          "- der gefahrene Weg. Koordinaten werden nicht einmal gespeichert.\n\n" +
+          "Wie lange: veroeffentlichte Eintraege verfallen nach " +
+          Store.AUFBEWAHRUNG_TAGE + " Tagen.\n" +
+          "Du kannst jederzeit alles loeschen und die Rangliste wieder ausschalten.\n\n" +
+          "Einverstanden?";
+        if (!confirm(text)) {
+          $("#optCloud").checked = false;
+          return;
+        }
+        Cloud.einwilligungSetzen(true);
+      }
+
       Cloud.setEnabled(on);
       if (on) {
         // Fail loudly and switch back off rather than leaving the user believing
@@ -737,16 +839,6 @@
       renderTrips();
     });
 
-    $("#btnCloudWipe").addEventListener("click", async () => {
-      if (!confirm("Alle von diesem Gerät veröffentlichten Einträge aus der Online-Rangliste löschen?")) return;
-      try {
-        const n = await Cloud.deleteAllMine();
-        alert(n + " Einträge gelöscht.");
-        updateCloudStatus();
-      } catch (e) {
-        alert("Löschen fehlgeschlagen: " + e.message);
-      }
-    });
   }
 
   function updateCloudStatus() {

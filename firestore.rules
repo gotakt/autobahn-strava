@@ -67,7 +67,7 @@ service cloud.firestore {
         && request.resource.data.keys().hasOnly(
              ['segmentId', 'uid', 'nickname', 'score', 'avgKmh', 'sustainedKmh',
               'hardBraking', 'distanceM', 'durationSec', 'speedTrack', 'area',
-              'roadType', 'withinLimit', 'createdAt'])
+              'roadType', 'withinLimit', 'expiresAt', 'createdAt'])
         && request.resource.data.uid == request.auth.uid
         && request.resource.data.createdAt == request.time
         && shortText(request.resource.data.segmentId, 128)
@@ -91,7 +91,15 @@ service cloud.firestore {
         // Samples ohnehin nicht. Sie erzwingen nur, dass er da und ein
         // Boolescher Wert ist; die Auswertung passiert im Client, der ihn
         // streng auf `true` prueft und alles ohne Nachweis ausschliesst.
-        && request.resource.data.withinLimit is bool;
+        && request.resource.data.withinLimit is bool
+        // Aufbewahrungsfrist. Der Client setzt sie, die Regel prueft sie: rund
+        // 180 Tage voraus, mit einem Tag Spielraum fuer ungenaue Geraeteuhren.
+        // Ohne diese Pruefung koennte sich jeder eine Frist von zehn Jahren
+        // ausstellen, und die Zusage im Datenschutztext waere wertlos.
+        // Geloescht wird per Firestore-TTL-Regel auf genau diesem Feld.
+        && request.resource.data.expiresAt is timestamp
+        && request.resource.data.expiresAt > request.time + duration.value(179, 'd')
+        && request.resource.data.expiresAt < request.time + duration.value(181, 'd');
 
       // Entries are immutable: an edit would let a published result be rewritten
       // after others have already been ranked against it. Delete and re-publish.

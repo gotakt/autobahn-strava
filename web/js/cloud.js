@@ -25,6 +25,37 @@
 
   const KEY_SESSION = "as_cloud_session";
   const KEY_ENABLED = "as_cloud_enabled";
+  const KEY_EINWILLIGUNG = "as_cloud_einwilligung";
+
+  // ---- Einwilligung ---------------------------------------------------------
+  // Fassung des Textes, dem zugestimmt wurde. Aendert sich der Text
+  // inhaltlich, wird diese Zahl erhoeht und erneut gefragt — eine Zustimmung
+  // zu einem alten Text ist keine Zustimmung zum neuen.
+  const EINWILLIGUNG_FASSUNG = 1;
+
+  function einwilligung() {
+    try {
+      return JSON.parse(localStorage.getItem(KEY_EINWILLIGUNG) || "null");
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function hatEingewilligt() {
+    const e = einwilligung();
+    return !!(e && e.fassung === EINWILLIGUNG_FASSUNG);
+  }
+
+  function einwilligungSetzen(ja) {
+    if (!ja) {
+      localStorage.removeItem(KEY_EINWILLIGUNG);
+      return;
+    }
+    localStorage.setItem(KEY_EINWILLIGUNG, JSON.stringify({
+      fassung: EINWILLIGUNG_FASSUNG,
+      am: new Date().toISOString(),
+    }));
+  }
 
   // ---- Opt-in ---------------------------------------------------------------
 
@@ -33,6 +64,11 @@
   }
 
   function setEnabled(on) {
+    // Einschalten geht nur mit gueltiger Einwilligung. Ausschalten immer —
+    // ein Widerruf darf an nichts haengen.
+    if (on && !hatEingewilligt()) {
+      throw new Error("Ohne Einwilligung kann die Online-Rangliste nicht eingeschaltet werden.");
+    }
     localStorage.setItem(KEY_ENABLED, on ? "1" : "0");
   }
 
@@ -108,8 +144,17 @@
   // ---- Firestore REST value mapping ----------------------------------------
   // Firestore's REST shape is typed values; these two convert to and from it.
 
+  /** Ein Zeitstempel, den Firestore als solchen versteht — nicht als Text.
+   *  Nur so kann eine TTL-Regel darauf greifen. */
+  function alsZeitpunkt(iso) {
+    return { __zeitpunkt: iso };
+  }
+
   function toValue(v) {
     if (v === null || v === undefined) return { nullValue: null };
+    if (v && typeof v === "object" && typeof v.__zeitpunkt === "string") {
+      return { timestampValue: v.__zeitpunkt };
+    }
     if (typeof v === "boolean") return { booleanValue: v };
     if (typeof v === "number") {
       return Number.isInteger(v) ? { integerValue: String(v) } : { doubleValue: v };
@@ -195,6 +240,9 @@
       // Boolescher Wert: auf Abschnitten ohne festes Limit ist er `false` und
       // ohne Bedeutung, weil es die Ansicht dort gar nicht gibt.
       withinLimit: trip.withinLimit === true,
+      // Aufbewahrungsfrist. Die Regeln pruefen, dass sie rund 180 Tage voraus
+      // liegt, damit sich niemand eine laengere ausstellt.
+      expiresAt: alsZeitpunkt(global.Store.verfaelltAm()),
       distanceM: Math.round(trip.distanceM),
       durationSec: Math.round(trip.durationSec),
       // Already downsampled to <= 60 points when the trip was saved.
@@ -325,6 +373,25 @@
     return ids.length;
   }
 
+  /** Alles, was diese Kennung online stehen hat — fuer den Datenexport.
+   *  Rohe Dokumente, nichts weggelassen. */
+  async function meineEintraege() {
+    const s = await signIn();
+    const body = {
+      structuredQuery: {
+        from: [{ collectionId: "entries" }],
+        where: {
+          fieldFilter: { field: { fieldPath: "uid" }, op: "EQUAL", value: { stringValue: s.uid } },
+        },
+        limit: 500,
+      },
+    };
+    const rows = await authed(`${DB}:runQuery`, { method: "POST", body: JSON.stringify(body) });
+    return (rows || [])
+      .filter((r) => r.document)
+      .map((r) => ({ ...fromFields(r.document.fields || {}), id: r.document.name.split("/").pop() }));
+  }
+
   global.Cloud = {
     isEnabled,
     setEnabled,
@@ -334,6 +401,11 @@
     myEntries,
     deleteEntry,
     deleteAllMine,
+    meineEintraege,
+    hatEingewilligt,
+    einwilligungSetzen,
+    einwilligung,
+    EINWILLIGUNG_FASSUNG,
     uid: () => (session() || {}).uid || null,
   };
 })(typeof window !== "undefined" ? window : globalThis);

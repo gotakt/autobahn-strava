@@ -63,6 +63,7 @@ function onlineZeile(sustainedKmh, score = 95, withinLimit = true) {
     online: true,
   };
   if (withinLimit !== undefined) r.withinLimit = withinLimit;
+  r.expiresAt = Store.verfaelltAm();
   return r;
 }
 
@@ -221,6 +222,53 @@ describe("Ein Fuenf-Sekunden-Mittel beweist keine Legalitaet", () => {
   });
 });
 
+describe("Die Aufbewahrungsfrist gilt beim Anzeigen, nicht erst beim Loeschen", () => {
+  // Die Frist steht im Datenschutztext. Eine Zusage, die erst gilt, wenn
+  // Firestore irgendwann aufraeumt, ist keine.
+
+  test("die Frist ist ein halbes Jahr", () => {
+    assert.equal(Store.AUFBEWAHRUNG_TAGE, 180);
+    const jetzt = Date.UTC(2026, 0, 1);
+    const bis = Date.parse(Store.verfaelltAm(jetzt));
+    assert.equal((bis - jetzt) / 86400000, 180);
+  });
+
+  test("ein frischer Eintrag ist nicht abgelaufen", () => {
+    assert.equal(Store.istAbgelaufen({ expiresAt: Store.verfaelltAm() }), false);
+  });
+
+  test("ein abgelaufener schon", () => {
+    const gestern = new Date(Date.now() - 86400000).toISOString();
+    assert.equal(Store.istAbgelaufen({ expiresAt: gestern }), true);
+  });
+
+  test("ohne Frist gilt abgelaufen — nicht 'unbegrenzt'", () => {
+    for (const kaputt of [{}, { expiresAt: null }, { expiresAt: 12345 }, { expiresAt: "morgen" }]) {
+      assert.equal(Store.istAbgelaufen(kaputt), true, JSON.stringify(kaputt));
+    }
+  });
+
+  test("abgelaufene Online-Zeilen erscheinen nicht in der Rangliste", () => {
+    const gestern = new Date(Date.now() - 86400000).toISOString();
+    const alt = { ...onlineZeile(95), expiresAt: gestern };
+    const gemischt = Store.mischeRanglisten([], [alt], segMit, "legalSpeed", new Set());
+    assert.deepEqual(gemischt, [], "ein abgelaufener Eintrag steht noch in der Liste");
+  });
+
+  test("auch nicht in der Score-Sortierung", () => {
+    const gestern = new Date(Date.now() - 86400000).toISOString();
+    const alt = { ...onlineZeile(95), expiresAt: gestern };
+    assert.deepEqual(Store.mischeRanglisten([], [alt], segMit, "score", new Set()), []);
+  });
+
+  test("eigene lokale Fahrten sind von der Frist nicht betroffen", () => {
+    // Die gehoeren dem Geraet. Was lokal liegt, verfaellt nicht.
+    const lokal = [{ id: "t_9", sustainedKmh: 95, score: 90, nickname: "Ich", withinLimit: true }];
+    const gemischt = Store.mischeRanglisten(lokal, [], segMit, "legalSpeed", new Set());
+    assert.equal(gemischt.length, 1);
+  });
+});
+
 describe("Der Online-Weg darf die Regel nicht umgehen", () => {
   // Das ist der eigentliche Befund vom 08.09.2026.
 
@@ -301,7 +349,8 @@ describe("Der Online-Weg darf die Regel nicht umgehen", () => {
       { id: "t_1", publishedId: "online_abc", segmentId: MIT_LIMIT, mode: "public" },
     ]));
     const lokal = [{ id: "t_1", sustainedKmh: 95, score: 90, nickname: "Ich", withinLimit: true }];
-    const online = [{ id: "online_abc", sustainedKmh: 95, score: 90, nickname: "Ich", online: true, withinLimit: true }];
+    const online = [{ id: "online_abc", sustainedKmh: 95, score: 90, nickname: "Ich", online: true,
+                     withinLimit: true, expiresAt: Store.verfaelltAm() }];
     // Nicht von Hand zusammengestellt, sondern genau die Zuordnung, die auch
     // die App benutzt — sonst prueft der Test einen Ablauf, den es nicht gibt.
     const schon = Store.veroeffentlichteLokaleIds();

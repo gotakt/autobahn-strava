@@ -168,6 +168,46 @@
   // Mindestqualitaet, damit "schnell" nicht "ruecksichtslos" heissen kann.
   const MIN_SCORE = 70;
 
+  // ---- Aufbewahrungsfrist ---------------------------------------------------
+  //
+  // Wie lange ein veroeffentlichter Eintrag oben bleibt. Die DSGVO verlangt,
+  // dass personenbezogene Daten nicht laenger gespeichert werden, als der Zweck
+  // es braucht. Der Zweck ist der Vergleich mit anderen auf derselben Strecke —
+  // dafuer reicht ein halbes Jahr.
+  //
+  // Durchgesetzt an drei Stellen, weil eine allein nicht reicht:
+  //   1. der Client schreibt `expiresAt` beim Veroeffentlichen (cloud.js),
+  //   2. die Firestore-Regeln verlangen, dass es rund 180 Tage voraus liegt —
+  //      niemand kann sich eine laengere Frist ausstellen,
+  //   3. abgelaufene Eintraege fliegen hier beim Mischen raus, auch wenn die
+  //      TTL-Regel sie noch nicht geloescht hat.
+  //
+  // Die Logik steht HIER und nicht in cloud.js, obwohl sie zum Hochladen
+  // gehoert: store.js wird frueher geladen (siehe index.html). Laege sie
+  // drueben, muesste das Filtern unten auf ein Objekt zugreifen, das es beim
+  // Laden noch nicht gibt — und im Zweifel still gar nicht filtern. Eine
+  // Zusage, die bei fehlender Abhaengigkeit lautlos ausfaellt, ist keine.
+  const AUFBEWAHRUNG_TAGE = 180;
+
+  /** Wann ein jetzt veroeffentlichter Eintrag verfaellt (ISO-Zeitstempel). */
+  function verfaelltAm(jetzt) {
+    const t = (jetzt === undefined ? Date.now() : jetzt) + AUFBEWAHRUNG_TAGE * 86400000;
+    return new Date(t).toISOString();
+  }
+
+  /** Ist diese Ranglistenzeile abgelaufen?
+   *
+   *  Fehlt die Angabe, gilt sie als abgelaufen. Das trifft Eintraege von vor
+   *  der Einfuehrung der Frist — und das ist die richtige Antwort: ein Eintrag
+   *  ohne Frist ist genau der Zustand, den diese Regelung beseitigt. */
+  function istAbgelaufen(row, jetzt) {
+    const j = jetzt === undefined ? Date.now() : jetzt;
+    const v = row && row.expiresAt;
+    if (typeof v !== "string") return true;
+    const ms = Date.parse(v);
+    return !isFinite(ms) || ms <= j;
+  }
+
   /** Gibt es auf diesem Abschnitt ueberhaupt ein gesetzliches Limit? */
   function legalSpeedVerfuegbar(seg) {
     return !!(seg && typeof seg.limitKmh === "number" && seg.limitKmh > 0);
@@ -233,9 +273,16 @@
     const schon = veroeffentlichteLokaleIds instanceof Set
       ? veroeffentlichteLokaleIds
       : new Set(veroeffentlichteLokaleIds || []);
+
+    // Abgelaufene Online-Eintraege fliegen hier raus. Die Aufbewahrungsfrist
+    // steht im Datenschutztext, und eine Zusage, die erst gilt, wenn Firestore
+    // irgendwann aufraeumt, ist keine. Lokale Zeilen sind nicht betroffen —
+    // die eigenen Fahrten gehoeren dem Geraet und niemandem sonst.
+    const frisch = (online || []).filter((r) => !istAbgelaufen(r));
+
     const zeilen = (lokal || [])
       .filter((r) => !r.id || !schon.has(r.id))
-      .concat(online || []);
+      .concat(frisch);
 
     if (sort === "legalSpeed") {
       const erlaubt = zeilen.filter((r) => legalSpeedZulaessig(r, seg));
@@ -298,6 +345,9 @@
     legalSpeedZulaessig,
     mischeRanglisten,
     veroeffentlichteLokaleIds,
+    verfaelltAm,
+    istAbgelaufen,
+    AUFBEWAHRUNG_TAGE,
     GPS_TOLERANZ_KMH,
     MIN_SCORE,
   };
