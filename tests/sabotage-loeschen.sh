@@ -19,6 +19,11 @@
 # Kennung erzeugt. Genau deshalb gibt es `bestehendeSitzung()` — und genau
 # deshalb muss auffallen, wenn jemand es wieder zurueckdreht.
 #
+# Macht zusammen SIEBEN sabotierte Richtungen, nicht fuenf: Zusage 2 zerfaellt
+# in drei eigene Faelle, weil es drei getrennte Seitenlaeufe gibt (Export,
+# Eintraege loeschen, Strecken loesen) und jeder einzeln kaputtgehen kann.
+# Wer sie als eine zaehlt, meldet eine Abdeckung, die es nicht gibt.
+#
 # Ein blosser Exit-Code != 0 zaehlt NICHT. Verlangt wird jeweils ein benannter
 # roter Fall.
 #
