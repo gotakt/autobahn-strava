@@ -1,6 +1,6 @@
 {
   "name": "autobahn-strava",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "description": "Strava for Autobahn journeys — leaderboard for the best legal drive, not the fastest.",
   "license": "MIT",
