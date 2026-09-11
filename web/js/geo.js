@@ -59,6 +59,31 @@
     return this;
   };
 
+  /**
+   * Der native Watcher.
+   *
+   * `addWatcher()` hat zwei Gestalten, je nachdem, WIE das Plugin geholt wurde
+   * — und dieses Repository holt es ueber den Legacy-Weg, weil es bewusst
+   * keinen Build-Schritt hat und damit auch kein `@capacitor/core` im Bundle:
+   *
+   *   `registerPlugin()` aus `@capacitor/core`
+   *       -> Promise<CallbackID>, so steht es in der Plugin-Dokumentation
+   *
+   *   `Capacitor.Plugins.*` aus der nativ injizierten `native-bridge.js`
+   *       -> die `callbackId` DIREKT, als String. Callback-Methoden laufen
+   *          dort ueber `cap.nativeCallback`, und das gibt `cap.toNative(...)`
+   *          zurueck, nicht ein Promise.
+   *
+   * Bis zum 11.09.2026 stand hier nur `.then(...)`. Auf dem echten Geraet ist
+   * das ein TypeError, die Aufnahme startete nicht ein einziges Mal, und im
+   * Simulator fiel es nie auf, weil es dort gar kein natives Plugin gibt und
+   * `start()` auf `_startWeb()` verzweigt.
+   *
+   * Beide Wege meinen dieselbe Id: die Swift-Seite sucht den Watcher ueber
+   * `call.getString("id")` und vergleicht mit `callbackId`. Deshalb genuegt es,
+   * beide Formen anzunehmen — eine Abhaengigkeit oder ein Build waere dafuer
+   * nicht noetig.
+   */
   Recorder.prototype._startNative = function (lauf) {
     const plugin = nativePlugin();
     this.native = plugin;
@@ -66,8 +91,26 @@
     // stop() auf null gesetzt, und der verspaetete Rueckweg unten braucht den
     // Handle trotzdem, um aufzuraeumen.
     const ueberholt = () => lauf !== this.lauf;
-    plugin
-      .addWatcher(
+
+    const uebernehmen = (id) => {
+      if (ueberholt()) {
+        // Zwischen Start und dieser Antwort wurde gestoppt oder neu gestartet.
+        // Dieser Watcher gehoert niemandem mehr — sofort weg, und auf keinen
+        // Fall als aktueller watchId uebernehmen.
+        plugin.removeWatcher({ id }).catch(() => {});
+        return;
+      }
+      this.watchId = id;
+    };
+
+    const melden = (e) => {
+      if (ueberholt()) return;
+      this.onSample({ error: (e && e.message) || String(e) });
+    };
+
+    let rueckgabe;
+    try {
+      rueckgabe = plugin.addWatcher(
         {
           // Shown in the Android notification and the iOS location indicator.
           backgroundMessage: "Fahrt wird aufgezeichnet.",
@@ -99,21 +142,27 @@
             },
           });
         }
-      )
-      .then((id) => {
-        if (ueberholt()) {
-          // Zwischen Start und dieser Antwort wurde gestoppt oder neu
-          // gestartet. Dieser Watcher gehoert niemandem mehr — sofort weg,
-          // und auf keinen Fall als aktueller watchId uebernehmen.
-          plugin.removeWatcher({ id }).catch(() => {});
-          return;
-        }
-        this.watchId = id;
-      })
-      .catch((e) => {
-        if (ueberholt()) return;
-        this.onSample({ error: e.message || String(e) });
-      });
+      );
+    } catch (e) {
+      // Der Aufruf selbst ist gescheitert — melden statt den Fehler nach oben
+      // durchzureichen, sonst bricht startRecording() mit einem Dialog ab,
+      // in dem der halbe Quelltext steht.
+      melden(e);
+      return this;
+    }
+
+    if (rueckgabe && typeof rueckgabe.then === "function") {
+      rueckgabe.then(uebernehmen).catch(melden);
+    } else if (rueckgabe !== null && rueckgabe !== undefined) {
+      // Legacy-Bridge: die Id liegt sofort vor. Der Wettlauf mit stop() kann
+      // hier gar nicht erst entstehen.
+      uebernehmen(rueckgabe);
+    } else {
+      // `cap.toNative` gibt null zurueck, wenn es die Nachricht nicht
+      // loswerden konnte. Ohne Id gibt es spaeter keinen Weg, den Watcher
+      // wieder zu entfernen — das darf nicht still passieren.
+      melden(new Error("Der Standort-Watcher hat keine Kennung geliefert."));
+    }
     return this;
   };
 

@@ -73,8 +73,8 @@ echo "Sabotage 1: der addWatcher-Rueckweg uebernimmt die Id ungeprueft."
 echo "Der Stopp-vor-Aufloesung-Fall MUSS rot werden."
 echo
 oeffnen "$ZIEL" \
-  '        if (ueberholt()) {' \
-  '        if (false) {  // SABOTAGE' || exit 1
+  '      if (ueberholt()) {' \
+  '      if (false) {  // SABOTAGE' || exit 1
 grep -qF "SABOTAGE" "$ZIEL" || { echo "FEHLER: sabotierte Fassung nicht erzeugt." >&2; exit 1; }
 erwarte_rot "Sabotage 1: die Ueberholt-Pruefung" \
             "DER FALL: Stopp bevor addWatcher aufloest"
@@ -93,6 +93,40 @@ oeffnen "$ZIEL" \
 grep -qF "SABOTAGE" "$ZIEL" || { echo "FEHLER: sabotierte Fassung nicht erzeugt." >&2; exit 1; }
 erwarte_rot "Sabotage 2: die Ungueltigmachung beim Stopp" \
             "DER FALL: Stopp bevor addWatcher aufloest"
+cp "$SICHERUNG" "$ZIEL"
+
+# ── 3. Nur noch der Promise-Weg ──────────────────────────────────────
+# Genau der Zustand von vor dem 11.09.2026: `addWatcher()` wird behandelt, als
+# gaebe es nur eine Gestalt. Auf dem echten Geraet liefert die Legacy-Bridge
+# aber die Id direkt als String, und `.then` darauf ist ein TypeError — die
+# Aufnahme startete dort kein einziges Mal.
+echo
+echo "Sabotage 3: nur noch der Promise-Weg wird angenommen."
+echo "Der Legacy-Fall MUSS rot werden."
+echo
+oeffnen "$ZIEL" \
+  '    } else if (rueckgabe !== null && rueckgabe !== undefined) {' \
+  '    } else if (false) {  // SABOTAGE' || exit 1
+grep -qF "SABOTAGE" "$ZIEL" || { echo "FEHLER: sabotierte Fassung nicht erzeugt." >&2; exit 1; }
+erwarte_rot "Sabotage 3: die zweite Gestalt von addWatcher" \
+            "die Id wird uebernommen"
+cp "$SICHERUNG" "$ZIEL"
+
+# ── 4. Der Aufruf wird wieder ungeschuetzt gemacht ───────────────────
+# `.then()` direkt auf den Rueckgabewert. Das ist woertlich der alte Code und
+# der Fehler, den das Geraet gezeigt hat.
+echo
+echo "Sabotage 4: .then() direkt auf den Rueckgabewert, wie vorher."
+echo "Der Start MUSS wieder werfen."
+echo
+oeffnen "$ZIEL" \
+  '    if (rueckgabe && typeof rueckgabe.then === "function") {
+      rueckgabe.then(uebernehmen).catch(melden);' \
+  '    if (true) {  // SABOTAGE
+      rueckgabe.then(uebernehmen).catch(melden);' || exit 1
+grep -qF "SABOTAGE" "$ZIEL" || { echo "FEHLER: sabotierte Fassung nicht erzeugt." >&2; exit 1; }
+erwarte_rot "Sabotage 4: der ungeschuetzte Aufruf" \
+            "DER FALL: Start wirft nicht"
 cp "$SICHERUNG" "$ZIEL"
 
 zurueck

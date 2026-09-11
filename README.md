@@ -1,7 +1,7 @@
 # Autobahn Strava 🛣️
 
 [![Pruefung](https://github.com/gotakt/autobahn-strava/actions/workflows/pruefung.yml/badge.svg)](https://github.com/gotakt/autobahn-strava/actions/workflows/pruefung.yml)
-![103 tests](https://img.shields.io/badge/tests-103-3DDC84)
+![109 tests](https://img.shields.io/badge/tests-109-3DDC84)
 ![licence MIT](https://img.shields.io/badge/licence-MIT-9AA5BF)
 
 **Strava for Autobahn journeys — but the winning metric is *best legal drive*, not top speed.**
@@ -155,20 +155,20 @@ and don't touch it while driving. Recording is fully automatic — see below.
 
 ## Tests
 
-The badge says **103**, and that is the number of test cases — nothing else counted in.
+The badge says **109**, and that is the number of test cases — nothing else counted in.
 
 | | | |
 |---|---|---|
-| `npm test` | 84 | plain Node tests, no services needed |
+| `npm test` | 90 | plain Node tests, no services needed |
 | `npm run test:regeln` | 19 | `firestore.rules` against the Firestore emulator (needs Java) |
-| | **103** | |
+| | **109** | |
 
 The emulator suite lives in `tests/emulator/` rather than beside the others, and that is
 deliberate: `npm test` matches `tests/*.test.mjs`, and without a running emulator its
 `before()` throws. `node --test` then reports those cases as `cancelled` while printing
 `fail 0` — a line that looks green although 19 checks never ran.
 
-**What is *not* in the 103.** There are also **17 sabotage directions** across five scripts
+**What is *not* in the 109.** There are also **19 sabotage directions** across five scripts
 (`npm run test:sabotage`, `:serve`, `:recorder`, `:loeschen`, `test:regeln:sabotage`). Each
 one breaks a promise on purpose and requires a **named** test case to go red — an exit code
 alone is not accepted, because a typo would produce one too. They are counter-checks on the
@@ -238,20 +238,50 @@ xcodebuild -project ios/App/App.xcodeproj -scheme App -configuration Debug \
 The only warning is `appintentsmetadataprocessor: Metadata extraction skipped. No
 AppIntents.framework dependency found.` — expected for an app that uses no App Intents.
 
-**What is still not proven.** The proof reaches as far as: it compiles, installs, starts and
-draws its interface on a simulator. It stops there. Nobody has run this build on a physical
-iPhone and nobody has driven with it, so none of the following has been observed:
+**On a physical iPhone, and what that immediately found.** On 11.09.2026 the released
+`v1.1.0` was installed on an iPhone 17 Pro (iOS 26.6.1) and started. The app opened and drew
+its interface. Then **Start did nothing at all**, with an alert containing half of `geo.js`:
 
-- the location permission dialogs, and what the app does when permission is refused;
+```
+TypeError: plugin.addWatcher(...).then is not a function
+```
+
+Recording had never once started on real hardware. Measured afterwards from the app's own
+storage: `as_trips` absent — zero trips.
+
+The cause is a two-shape API, and the simulator cannot reach it:
+
+| how the plugin is obtained | what `addWatcher()` returns |
+|---|---|
+| `registerPlugin()` from `@capacitor/core` | `Promise<CallbackID>` — what the plugin's docs describe |
+| `Capacitor.Plugins.*` from the injected `native-bridge.js` | the `callbackId` **directly, as a string** |
+
+This repository has no build step on purpose, so it ships no `@capacitor/core`, so it gets the
+second shape — and `.then` on a string throws. In the simulator there is no native plugin at
+all, so `start()` branches to `_startWeb()` and the native path is never executed. It ran for
+the first time on the device.
+
+Both shapes mean the same id: the plugin's Swift side looks the watcher up by
+`call.getString("id")` and compares it to `callbackId`. `addWatcher` is declared
+`CAPPluginReturnCallback`, `removeWatcher` `CAPPluginReturnPromise` — only the first is
+affected. `_startNative` now accepts either shape. No new dependency, no build step.
+
+The unit tests were green throughout, because the test double returned a Promise: it encoded
+the author's assumption rather than the platform's behaviour. The sabotage directions were
+green too — they proved the suite defends its contract, not that it was the right contract.
+`tests/recorder.test.mjs` now runs the same lifecycle against both shapes.
+
+**What is still not proven.** Recording now starts on the device. Beyond that:
+
 - **background location with the screen locked** — the one thing the native shell exists
-  for, and the thing `Info.plist` makes a promise about;
-- real GPS on real hardware, at real speed.
+  for, and the thing `Info.plist` makes a promise about — has not been observed;
+- neither has a real drive, nor GPS behaviour at speed;
+- the "always" permission upgrade path has not been exercised.
 
-The simulator *can* exercise permission flows and simulated Core Location data — Xcode can
-feed it a fixed location or a whole GPX route — but none of that was part of this proof. What
-it cannot do is prove real GPS reception, or background-location behaviour on a physical,
-locked iPhone; those depend on hardware and on the power management of a real device. That
-boundary is deliberate and stays documented rather than quietly implied away.
+A simulator *can* exercise permission flows and simulated Core Location data — Xcode can feed
+it a fixed location or a whole GPX route — but none of that was part of any proof here, and it
+could not have caught the defect above. That boundary is deliberate and stays documented
+rather than quietly implied away.
 
 **A note on the plugin.** `npx cap sync ios` warns that
 `@capacitor-community/background-geolocation` is built for Capacitor 7 while this project

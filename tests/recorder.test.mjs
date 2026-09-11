@@ -162,3 +162,121 @@ describe("Der native Watcher ueberlebt kein Stopp", () => {
     assert.deepEqual(gesehen, []);
   });
 });
+
+/**
+ * Die zweite Gestalt, die `addWatcher()` haben kann — und die, die auf dem
+ * echten Geraet tatsaechlich auftritt.
+ *
+ * Gemessen am 11.09.2026 auf einem iPhone 17 Pro (iOS 26.6.1), beim allerersten
+ * Start der Aufnahme auf echter Hardware:
+ *
+ *     TypeError: plugin.addWatcher(...).then is not a function
+ *     (... '....then' is undefined)
+ *
+ * Ursache, Schicht fuer Schicht:
+ *
+ *   1. `index.html` laedt keine Capacitor-Laufzeit — dieses Repository hat
+ *      bewusst keinen Build-Schritt.
+ *   2. `window.Capacitor` kommt deshalb nur aus der nativ injizierten
+ *      `native-bridge.js` samt dem Legacy-Shim unter `Capacitor.Plugins.*`.
+ *   3. Dort wird eine Callback-Methode auf `cap.nativeCallback` verdrahtet, und
+ *      die gibt `cap.toNative(...)` zurueck — die `callbackId`, ein STRING.
+ *      Ein Promise gibt es nur beim Weg ueber `registerPlugin()` aus
+ *      `@capacitor/core`.
+ *   4. `addWatcher` ist im Plugin als `CAPPluginReturnCallback` deklariert,
+ *      `removeWatcher` als `CAPPluginReturnPromise`. Nur der erste ist
+ *      betroffen.
+ *
+ * Beide Wege meinen dieselbe Id: die Swift-Seite sucht den Watcher ueber
+ * `call.getString("id")` und vergleicht sie mit `callbackId`. Der Code muss
+ * also nicht wissen, welcher Weg gerade aktiv ist — nur beide Formen annehmen.
+ *
+ * Die bisherige Attrappe lieferte immer ein Promise. Sie hat damit die ANNAHME
+ * des Autors kodiert statt des Verhaltens der Plattform, und deshalb war die
+ * Testreihe gruen, waehrend die Aufnahme auf dem Geraet ueberhaupt nicht
+ * startete. Auch die Gegenprobe war gruen — sie prueft nur, ob die Suite den
+ * Vertrag verteidigt, nicht ob es der richtige Vertrag ist.
+ */
+function pluginAttrappeLegacy() {
+  const p = {
+    angelegt: [],
+    entfernt: [],
+    rueckrufe: [],
+    naechsteId: 1,
+    /** Genau wie `cap.nativeCallback`: die Id kommt SOFORT und als String. */
+    addWatcher(optionen, rueckruf) {
+      const id = String(p.naechsteId++);
+      p.rueckrufe.push(rueckruf);
+      p.angelegt.push(id);
+      return id;
+    },
+    removeWatcher({ id }) {
+      p.entfernt.push(id);
+      return Promise.resolve();
+    },
+  };
+  return p;
+}
+
+describe("Die Bridge liefert die Watcher-Id auch ohne Promise", () => {
+  let legacy;
+
+  beforeEach(() => {
+    legacy = pluginAttrappeLegacy();
+    globalThis.Capacitor = {
+      isNativePlatform: () => true,
+      Plugins: { BackgroundGeolocation: legacy },
+    };
+  });
+
+  test("DER FALL: Start wirft nicht, wenn addWatcher direkt eine Id liefert", () => {
+    const rec = new Geo.Recorder(() => {});
+    assert.doesNotThrow(() => rec.start(), "genau der Fehler vom echten Geraet");
+    assert.equal(legacy.angelegt.length, 1, "es wurde gar kein Watcher angelegt");
+  });
+
+  test("die Id wird uebernommen — sonst laesst sich nichts mehr entfernen", async () => {
+    const rec = new Geo.Recorder(() => {});
+    rec.start();
+    await ruhe();
+    assert.equal(rec.watchId, legacy.angelegt[0], "watchId ist nicht die Id des Watchers");
+  });
+
+  test("Stopp entfernt den Watcher wirklich", async () => {
+    const rec = new Geo.Recorder(() => {});
+    rec.start();
+    await ruhe();
+    rec.stop();
+    assert.deepEqual(legacy.entfernt, legacy.angelegt,
+      "nach Stopp lief der Watcher weiter — Standortverfolgung ohne Stopp-Knopf");
+  });
+
+  test("Positionen landen in der Aufnahme", async () => {
+    const gesehen = [];
+    const rec = new Geo.Recorder((e) => e.sample && gesehen.push(e.sample));
+    rec.start();
+    await ruhe();
+    legacy.rueckrufe[0]({ time: 1000, latitude: 52.4, longitude: 9.7, accuracy: 5, speed: 30 });
+    assert.equal(gesehen.length, 1, "die Position kam nicht an");
+    assert.equal(rec.samples.length, 1);
+  });
+
+  test("nach Stopp kommt nichts mehr an", async () => {
+    const gesehen = [];
+    const rec = new Geo.Recorder((e) => e.sample && gesehen.push(e.sample));
+    rec.start();
+    await ruhe();
+    rec.stop();
+    legacy.rueckrufe[0]({ time: 1000, latitude: 52.4, longitude: 9.7, accuracy: 5, speed: 30 });
+    assert.deepEqual(gesehen, [], "ein Rueckruf nach dem Stopp landete in der Aufnahme");
+  });
+
+  test("ein Fehler aus dem Rueckruf wird gemeldet statt verschluckt", async () => {
+    const fehler = [];
+    const rec = new Geo.Recorder((e) => e.error && fehler.push(e.error));
+    rec.start();
+    await ruhe();
+    legacy.rueckrufe[0](null, { message: "Standort verweigert" });
+    assert.deepEqual(fehler, ["Standort verweigert"]);
+  });
+});
